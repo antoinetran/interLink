@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -63,24 +64,41 @@ func ReqWithError(
 		return nil, fmt.Errorf("Call exit status: %d. Body: %s", statusCode, ret)
 	}
 
-	returnValue, err := io.ReadAll(resp.Body)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		log.G(ctx).Error(err)
-		return nil, err
-	}
-	log.G(ctx).Debug(string(returnValue))
-
 	w.WriteHeader(resp.StatusCode)
 	types.SetDurationSpan(start, span, types.WithHTTPReturnCode(resp.StatusCode))
 
 	if respondWithValues {
-		_, err = w.Write(returnValue)
+		// In this case, we return continuously the values in the w, instead of reading it all. This allows for logs to be followed.
+		bodyReader := bufio.NewReader(resp.Body)
+
+		// 4096 is bufio.NewReader default buffer size.
+		bufferBytes := make([]byte, 4096)
+		// Looping until we get EOF from sidecar.
+		for {
+			n, err := bodyReader.Read(bufferBytes)
+			if err != nil {
+				if err == io.EOF {
+					// Nothing more to read, we returns nothing because we have already written to w.
+					return nil, nil
+				} else {
+					// Error during read.
+					return nil, err
+				}
+			}
+			_, err = w.Write(bufferBytes[:n])
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				log.G(ctx).Error(err)
+			}
+		}
+	} else {
+		returnValue, err := io.ReadAll(resp.Body)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			log.G(ctx).Error(err)
+			return nil, err
 		}
+		log.G(ctx).Debug(string(returnValue))
+		return returnValue, nil
 	}
-
-	return returnValue, nil
 }
