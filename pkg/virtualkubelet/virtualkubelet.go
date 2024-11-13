@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"strconv"
 	"time"
@@ -687,6 +688,10 @@ func (p *Provider) statusLoop(ctx context.Context) {
 	}
 }
 
+func GetSessionNumberMessage(sessionNumber int) string {
+	return "HTTP InterLink session " + strconv.Itoa(sessionNumber) + ": "
+}
+
 // GetLogs implements the logic for interLink pod logs retrieval.
 func (p *Provider) GetLogs(ctx context.Context, namespace, podName, containerName string, opts api.ContainerLogOpts) (io.ReadCloser, error) {
 	start := time.Now().Unix()
@@ -697,7 +702,10 @@ func (p *Provider) GetLogs(ctx context.Context, namespace, podName, containerNam
 	defer span.End()
 	defer types.SetDurationSpan(start, span)
 
-	log.G(ctx).Infof("receive GetPodLogs %q", podName)
+	// For debugging purpose, when we have many API calls, we can differentiate each one.
+	sessionNumber := rand.Intn(100000)
+
+	log.G(ctx).Infof(GetSessionNumberMessage(sessionNumber)+"receive GetPodLogs %q", podName)
 
 	key, err := buildKeyFromNames(namespace, podName)
 	if err != nil {
@@ -712,7 +720,7 @@ func (p *Provider) GetLogs(ctx context.Context, namespace, podName, containerNam
 		Opts:          types.ContainerLogOpts(opts),
 	}
 
-	return LogRetrieval(ctx, p.config, logsRequest)
+	return LogRetrieval(ctx, p.config, logsRequest, sessionNumber)
 }
 
 // GetStatsSummary returns dummy stats for all pods known by this provider.

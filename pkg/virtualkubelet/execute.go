@@ -25,6 +25,10 @@ import (
 
 const PodPhaseInitialize = "Initializing"
 
+func addSessionNumber(req *http.Request, sessionNumber int) {
+	req.Header.Set("InterLink-Http-Session", strconv.Itoa(sessionNumber))
+}
+
 func failedMount(ctx context.Context, failed *bool, name string, pod *v1.Pod, p *Provider) error {
 	*failed = true
 	log.G(ctx).Warning("Unable to find ConfigMap " + name + " for pod " + pod.Name + ". Waiting for it to be initialized")
@@ -54,13 +58,15 @@ func traceExecute(ctx context.Context, pod *v1.Pod, name string, startHTTPCall i
 }
 
 func doRequest(req *http.Request, token string) (*http.Response, error) {
+	return doRequestWithClient(req, token, http.DefaultClient)
+}
 
+func doRequestWithClient(req *http.Request, token string, httpClient *http.Client) (*http.Response, error) {
 	if token != "" {
 		req.Header.Add("Authorization", "Bearer "+token)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	return http.DefaultClient.Do(req)
-
+	return httpClient.Do(req)
 }
 
 func getSidecarEndpoint(ctx context.Context, interLinkURL string, interLinkPort string) string {
@@ -204,8 +210,7 @@ func createRequest(ctx context.Context, config Config, pod types.PodCreateReques
 
 	resp, err := doRequest(req, token)
 	if err != nil {
-		log.L.Error(err)
-		return nil, err
+		return nil, fmt.Errorf("error doing doRequest() in createRequest() log request: %s error: %w", fmt.Sprintf("%#v", req), err)
 	}
 	defer resp.Body.Close()
 
@@ -216,8 +221,7 @@ func createRequest(ctx context.Context, config Config, pod types.PodCreateReques
 	}
 	returnValue, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.L.Error(err)
-		return nil, err
+		return nil, fmt.Errorf("error doing ReadAll() in createRequest() log request: %s error: %w", fmt.Sprintf("%#v", req), err)
 	}
 
 	return returnValue, nil
@@ -329,7 +333,7 @@ func statusRequest(ctx context.Context, config Config, podsList []*v1.Pod, token
 // LogRetrieval performs a REST call to the InterLink API when the user ask for a log retrieval. Compared to create/delete/status request, a way smaller struct is marshalled and sent.
 // This struct only includes a minimum data set needed to identify the job/container to get the logs from.
 // Returns the call response and/or the first encountered error
-func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruct) (io.ReadCloser, error) {
+func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruct, sessionNumber int) (io.ReadCloser, error) {
 	tracer := otel.Tracer("interlink-service")
 	interLinkEndpoint := getSidecarEndpoint(ctx, config.InterlinkURL, config.Interlinkport)
 
@@ -345,14 +349,17 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 
 	bodyBytes, err := json.Marshal(logsRequest)
 	if err != nil {
-		log.G(ctx).Error(err)
-		return nil, err
+		errWithContext := fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"error during marshalling to JSON the log request: %s. Bodybytes: %s error: %w", fmt.Sprintf("%#v", logsRequest), bodyBytes, err)
+		log.G(ctx).Error(errWithContext)
+		return nil, errWithContext
 	}
+
 	reader := bytes.NewReader(bodyBytes)
 	req, err := http.NewRequest(http.MethodGet, interLinkEndpoint+"/getLogs", reader)
 	if err != nil {
-		log.G(ctx).Error(err)
-		return nil, err
+		errWithContext := fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"error during HTTP request: %s/getLogs %w", interLinkEndpoint, err)
+		log.G(ctx).Error(errWithContext)
+		return nil, errWithContext
 	}
 
 	// log.G(ctx).Println(string(bodyBytes))
@@ -367,16 +374,26 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 	defer spanHTTP.End()
 	defer types.SetDurationSpan(startHTTPCall, spanHTTP)
 
-	resp, err := doRequest(req, token)
+	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "before doRequestWithClient()")
+	// Add session number for end-to-end from VK to API to InterLink plugin (eg interlink-slurm-plugin)
+	addSessionNumber(req, sessionNumber)
+
+	logTransport := http.DefaultTransport.(*http.Transport).Clone()
+	//logTransport.DisableKeepAlives = true
+	//logTransport.MaxIdleConnsPerHost = -1
+	var logHttpClient = &http.Client{Transport: logTransport}
+
+	resp, err := doRequestWithClient(req, token, logHttpClient)
 	if err != nil {
 		log.G(ctx).Error(err)
 		return nil, err
 	}
-	// defer resp.Body.Close()
+	defer resp.Body.Close()
+	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "after doRequestWithClient()")
 
 	types.SetDurationSpan(startHTTPCall, spanHTTP, types.WithHTTPReturnCode(resp.StatusCode))
 	if resp.StatusCode != http.StatusOK {
-		err = errors.New("Unexpected error occured while getting logs. Status code: " + strconv.Itoa(resp.StatusCode) + ". Check InterLink's logs for further informations")
+		err = errors.New(GetSessionNumberMessage(sessionNumber)+"Unexpected error occured while getting logs. Status code: " + strconv.Itoa(resp.StatusCode) + ". Check InterLink's logs for further informations")
 	}
 
 	// return io.NopCloser(bufio.NewReader(resp.Body)), err
@@ -469,13 +486,14 @@ func RemoteExecution(ctx context.Context, config Config, p *Provider, pod *v1.Po
 
 		returnVal, err := createRequest(ctx, config, req, token)
 		if err != nil {
-			return err
+			return fmt.Errorf("error doing createRequest() in RemoteExecution() return value %s error detail %s error: %w", returnVal, fmt.Sprintf("%#v", err), err)
 		}
 
+		log.G(ctx).Debug("Pod " + pod.Name + " with Job ID " + resp.PodJID + " before json.Unmarshal()")
 		// get remote job ID and annotate it into the pod
 		err = json.Unmarshal(returnVal, &resp)
 		if err != nil {
-			return err
+			return fmt.Errorf("error doing Unmarshal() in RemoteExecution() return value %s error detail %s error: %w", returnVal, fmt.Sprintf("%#v", err), err)
 		}
 
 		if string(pod.UID) == resp.PodUID {
@@ -524,7 +542,8 @@ func checkPodsStatus(ctx context.Context, p *Provider, podsList []*v1.Pod, token
 
 		err = json.Unmarshal(returnVal, &ret)
 		if err != nil {
-			return nil, err
+			errWithContext := fmt.Errorf("error doing Unmarshal() in checkPodsStatus() error detail: %s error: %w", fmt.Sprintf("%#v", err), err)
+			return nil, errWithContext
 		}
 
 		// if there is a pod status available go ahead to match with the latest state available in etcd
