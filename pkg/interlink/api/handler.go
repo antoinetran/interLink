@@ -41,6 +41,7 @@ func ReqWithError(
 ) ([]byte, error) {
 
 	req.Header.Set("Content-Type", "application/json")
+	log.G(ctx).Debug("Doing request: " + string(req.RequestURI))
 	resp, err := DoReq(req)
 
 	if err != nil {
@@ -51,17 +52,23 @@ func ReqWithError(
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		log.G(ctx).Error("HTTP request in error.")
 		statusCode := http.StatusInternalServerError
 		w.WriteHeader(statusCode)
 		ret, err := io.ReadAll(resp.Body)
 		if err != nil {
+			log.G(ctx).Error("HTTP request in error and could not read body response: see error below.")
+			log.G(ctx).Error(err)
 			return nil, err
 		}
+		log.G(ctx).Error("HTTP request in error, body response: " + string(ret))
 		_, err = w.Write(ret)
 		if err != nil {
+			log.G(ctx).Error("HTTP request in error and could not write body response to InterLink Node: see error below.")
+			log.G(ctx).Error(err)
 			return nil, err
 		}
-		return nil, fmt.Errorf("Call exit status: %d. Body: %s", statusCode, ret)
+		return nil, fmt.Errorf("call exit status: %d. Body: %s", statusCode, ret)
 	}
 
 	w.WriteHeader(resp.StatusCode)
@@ -75,6 +82,7 @@ func ReqWithError(
 		bufferBytes := make([]byte, 4096)
 		// Looping until we get EOF from sidecar.
 		for {
+			log.G(ctx).Debug("Reading some bytes from InterLink sidecar " + string(req.RequestURI))
 			n, err := bodyReader.Read(bufferBytes)
 			if err != nil {
 				if err == io.EOF {
@@ -82,9 +90,12 @@ func ReqWithError(
 					return nil, nil
 				} else {
 					// Error during read.
+					log.G(ctx).Error("Could not read HTTP body: see error below.")
+					log.G(ctx).Error(err)
 					return nil, err
 				}
 			}
+			log.G(ctx).Debug("Received some bytes from InterLink sidecar content: " + string(bufferBytes[:n]))
 			_, err = w.Write(bufferBytes[:n])
 			if err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
