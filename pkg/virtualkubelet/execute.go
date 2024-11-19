@@ -353,9 +353,7 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 		token = string(b)
 	}
 
-	log.G(ctx).Debug("marshalling HTTP log request")
 	bodyBytes, err := json.Marshal(logsRequest)
-	log.G(ctx).Debug("marshalling HTTP log request done")
 	if err != nil {
 		errWithContext := fmt.Errorf("error during marshalling to JSON the log request: %s. Bodybytes: %s error: %w", fmt.Sprintf("%#v", logsRequest), bodyBytes, err)
 		log.G(ctx).Error(errWithContext)
