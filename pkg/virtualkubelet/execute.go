@@ -353,12 +353,15 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 		token = string(b)
 	}
 
+	log.G(ctx).Debug("marshalling HTTP log request")
 	bodyBytes, err := json.Marshal(logsRequest)
+	log.G(ctx).Debug("marshalling HTTP log request done")
 	if err != nil {
 		errWithContext := fmt.Errorf("error during marshalling to JSON the log request: %s. Bodybytes: %s error: %w", fmt.Sprintf("%#v", logsRequest), bodyBytes, err)
 		log.G(ctx).Error(errWithContext)
 		return nil, errWithContext
 	}
+
 	reader := bytes.NewReader(bodyBytes)
 	req, err := http.NewRequest(http.MethodGet, interLinkEndpoint+"/getLogs", reader)
 	if err != nil {
@@ -379,11 +382,13 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 	defer spanHTTP.End()
 	defer types.SetDurationSpan(startHTTPCall, spanHTTP)
 
+	log.G(ctx).Debug("before do HTTP request")
 	resp, err := doRequest(req, token)
 	if err != nil {
 		log.G(ctx).Error(err)
 		return nil, err
 	}
+	log.G(ctx).Debug("after do HTTP request")
 
 	if resp != nil {
 		types.SetDurationSpan(startHTTPCall, spanHTTP, types.WithHTTPReturnCode(resp.StatusCode))
