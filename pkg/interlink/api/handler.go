@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
+	"strconv"
 
 	"github.com/containerd/containerd/log"
 
@@ -80,9 +82,13 @@ func ReqWithError(
 
 		// 4096 is bufio.NewReader default buffer size.
 		bufferBytes := make([]byte, 4096)
+
+		// For debugging purpose, when we have many kubectl logs, we can differentiate each one.
+		sessionNumber := rand.Intn(100000)
+
 		// Looping until we get EOF from sidecar.
 		for {
-			log.G(ctx).Debug("Reading some bytes from InterLink sidecar " + string(req.RequestURI))
+			log.G(ctx).Debug("Session " + strconv.Itoa(sessionNumber) + ": Reading some bytes from InterLink sidecar " + string(req.RequestURI))
 			n, err := bodyReader.Read(bufferBytes)
 			if err != nil {
 				if err == io.EOF {
@@ -90,17 +96,26 @@ func ReqWithError(
 					return nil, nil
 				} else {
 					// Error during read.
-					log.G(ctx).Error("Could not read HTTP body: see error below.")
+					log.G(ctx).Error("Session " + strconv.Itoa(sessionNumber) + ": Could not read HTTP body: see error below.")
 					log.G(ctx).Error(err)
 					return nil, err
 				}
 			}
-			log.G(ctx).Debug("Received some bytes from InterLink sidecar content: " + string(bufferBytes[:n]))
+			log.G(ctx).Debug("Session " + strconv.Itoa(sessionNumber) + ": Received some bytes from InterLink sidecar content: " + string(bufferBytes[:n]))
 			_, err = w.Write(bufferBytes[:n])
 			if err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
 				log.G(ctx).Error(err)
 			}
+
+			// Flush otherwise it will take time to appear in kubectl logs.
+			if f, ok := w.(http.Flusher); ok {
+				log.G(h.Ctx).Debug("Session " + strconv.Itoa(sessionNumber) + ": Wrote some logs, now flushing...")
+				f.Flush()
+			} else {
+				log.G(h.Ctx).Debug("Session " + strconv.Itoa(sessionNumber) + ": Wrote some logs but could not flush because server does not support Flusher. It means the logs will take time to appear.")
+			}
+
 		}
 	} else {
 		returnValue, err := io.ReadAll(resp.Body)
