@@ -355,14 +355,16 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 
 	bodyBytes, err := json.Marshal(logsRequest)
 	if err != nil {
-		log.G(ctx).Error(fmt.Errorf("error during marshalling to JSON the log request: %s. Bodybytes: %s error: %w", fmt.Sprintf("%#v", logsRequest), bodyBytes, err))
-		return nil, err
+		errWithContext := fmt.Errorf("error during marshalling to JSON the log request: %s. Bodybytes: %s error: %w", fmt.Sprintf("%#v", logsRequest), bodyBytes, err)
+		log.G(ctx).Error(errWithContext)
+		return nil, errWithContext
 	}
 	reader := bytes.NewReader(bodyBytes)
 	req, err := http.NewRequest(http.MethodGet, interLinkEndpoint+"/getLogs", reader)
 	if err != nil {
-		log.G(ctx).Error(err)
-		return nil, err
+		errWithContext := fmt.Errorf("error during HTTP request: %s/getLogs %w", interLinkEndpoint, err)
+		log.G(ctx).Error(errWithContext)
+		return nil, errWithContext
 	}
 
 	// log.G(ctx).Println(string(bodyBytes))

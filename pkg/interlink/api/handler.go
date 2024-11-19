@@ -52,6 +52,7 @@ func ReqWithError(
 		log.G(ctx).Error(err)
 		return nil, err
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		log.G(ctx).Error("HTTP request in error.")
@@ -96,16 +97,15 @@ func ReqWithError(
 					return nil, nil
 				} else {
 					// Error during read.
-					log.G(ctx).Error("Session " + strconv.Itoa(sessionNumber) + ": Could not read HTTP body: see error below.")
-					log.G(ctx).Error(err)
-					return nil, err
+					w.WriteHeader(http.StatusInternalServerError)
+					return nil, fmt.Errorf("Session "+strconv.Itoa(sessionNumber)+": Could not read HTTP body: see error %w", err)
 				}
 			}
 			log.G(ctx).Debug("Session " + strconv.Itoa(sessionNumber) + ": Received some bytes from InterLink sidecar")
 			_, err = w.Write(bufferBytes[:n])
 			if err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
-				log.G(ctx).Error(err)
+				return nil, fmt.Errorf("could not write during ReqWithError() error: %w", err)
 			}
 
 			// Flush otherwise it will take time to appear in kubectl logs.
