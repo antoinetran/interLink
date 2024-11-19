@@ -101,7 +101,7 @@ func ReqWithError(
 					return nil, err
 				}
 			}
-			log.G(ctx).Debug("Session " + strconv.Itoa(sessionNumber) + ": Received some bytes from InterLink sidecar content: " + string(bufferBytes[:n]))
+			log.G(ctx).Debug("Session " + strconv.Itoa(sessionNumber) + ": Received some bytes from InterLink sidecar")
 			_, err = w.Write(bufferBytes[:n])
 			if err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
