@@ -62,6 +62,11 @@ func ReqWithErrorWithSessionNumber(
 	// Add session number for end-to-end from API to InterLink plugin (eg interlink-slurm-plugin)
 	addSessionNumber(req, sessionNumber)
 
+	if respondWithValues {
+		// Case continuous following logs, thus HTTP stream!! Otherwise the TCP connection will break as soon as the request is done.
+		req.Header.Set("Transfer-Encoding", "chunked")
+	}
+
 	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "before DoReq()")
 	resp, err := DoReq(req)
 	if err != nil {
