@@ -25,6 +25,10 @@ import (
 
 const PodPhaseInitialize = "Initializing"
 
+func addSessionNumber(req *http.Request, sessionNumber int) {
+	req.Header.Set("InterLink-Http-Session", strconv.Itoa(sessionNumber))
+}
+
 func failedMount(ctx context.Context, failed *bool, name string, pod *v1.Pod, p *Provider) error {
 	*failed = true
 	log.G(ctx).Warning("Unable to find ConfigMap " + name + " for pod " + pod.Name + ". Waiting for it to be initialized")
@@ -54,7 +58,6 @@ func traceExecute(ctx context.Context, pod *v1.Pod, name string, startHTTPCall i
 }
 
 func doRequest(req *http.Request, token string) (*http.Response, error) {
-
 	if token != "" {
 		req.Header.Add("Authorization", "Bearer "+token)
 	}
@@ -338,7 +341,7 @@ func statusRequest(ctx context.Context, config Config, podsList []*v1.Pod, token
 // LogRetrieval performs a REST call to the InterLink API when the user ask for a log retrieval. Compared to create/delete/status request, a way smaller struct is marshalled and sent.
 // This struct only includes a minimum data set needed to identify the job/container to get the logs from.
 // Returns the call response and/or the first encountered error
-func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruct) (io.ReadCloser, error) {
+func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruct, sessionNumber int) (io.ReadCloser, error) {
 	tracer := otel.Tracer("interlink-service")
 	var returnValue io.ReadCloser
 	interLinkEndpoint := getSidecarEndpoint(ctx, config.InterlinkURL, config.Interlinkport)
@@ -355,7 +358,7 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 
 	bodyBytes, err := json.Marshal(logsRequest)
 	if err != nil {
-		errWithContext := fmt.Errorf("error during marshalling to JSON the log request: %s. Bodybytes: %s error: %w", fmt.Sprintf("%#v", logsRequest), bodyBytes, err)
+		errWithContext := fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"error during marshalling to JSON the log request: %s. Bodybytes: %s error: %w", fmt.Sprintf("%#v", logsRequest), bodyBytes, err)
 		log.G(ctx).Error(errWithContext)
 		return nil, errWithContext
 	}
@@ -363,7 +366,7 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 	reader := bytes.NewReader(bodyBytes)
 	req, err := http.NewRequest(http.MethodGet, interLinkEndpoint+"/getLogs", reader)
 	if err != nil {
-		errWithContext := fmt.Errorf("error during HTTP request: %s/getLogs %w", interLinkEndpoint, err)
+		errWithContext := fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"error during HTTP request: %s/getLogs %w", interLinkEndpoint, err)
 		log.G(ctx).Error(errWithContext)
 		return nil, errWithContext
 	}
@@ -380,18 +383,20 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 	defer spanHTTP.End()
 	defer types.SetDurationSpan(startHTTPCall, spanHTTP)
 
-	log.G(ctx).Debug("before do HTTP request")
+	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "before do HTTP request")
+	// Add session number for end-to-end from VK to API to InterLink plugin (eg interlink-slurm-plugin)
+	addSessionNumber(req, sessionNumber)
 	resp, err := doRequest(req, token)
 	if err != nil {
 		log.G(ctx).Error(err)
 		return nil, err
 	}
-	log.G(ctx).Debug("after do HTTP request")
+	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "after do HTTP request")
 
 	if resp != nil {
 		types.SetDurationSpan(startHTTPCall, spanHTTP, types.WithHTTPReturnCode(resp.StatusCode))
 		if resp.StatusCode != http.StatusOK {
-			err = errors.New("Unexpected error occured while getting logs. Status code: " + strconv.Itoa(resp.StatusCode) + ". Check InterLink's logs for further informations")
+			err = errors.New(GetSessionNumberMessage(sessionNumber) + "Unexpected error occured while getting logs. Status code: " + strconv.Itoa(resp.StatusCode) + ". Check InterLink's logs for further informations")
 		} else {
 			returnValue = resp.Body
 		}
