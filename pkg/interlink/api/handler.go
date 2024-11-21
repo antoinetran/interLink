@@ -62,15 +62,18 @@ func ReqWithErrorWithSessionNumber(
 	// Add session number for end-to-end from API to InterLink plugin (eg interlink-slurm-plugin)
 	addSessionNumber(req, sessionNumber)
 
+	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "before DoReq()")
 	resp, err := DoReq(req)
 	if err != nil {
+		log.G(ctx).Error(GetSessionNumberMessage(sessionNumber) + "DoReq in error.")
+		log.G(ctx).Error(err)
 		statusCode := http.StatusInternalServerError
 		w.WriteHeader(statusCode)
-		log.G(ctx).Error(err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 
+	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "before check status code")
 	if resp.StatusCode != http.StatusOK {
 		log.G(ctx).Error(GetSessionNumberMessage(sessionNumber) + "HTTP request in error.")
 		statusCode := http.StatusInternalServerError
@@ -91,10 +94,9 @@ func ReqWithErrorWithSessionNumber(
 		return nil, fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"call exit status: %d. Body: %s", statusCode, ret)
 	}
 
-	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "writing OK header")
-	w.WriteHeader(resp.StatusCode)
 	types.SetDurationSpan(start, span, types.WithHTTPReturnCode(resp.StatusCode))
 
+	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "before respondWithValues")
 	if respondWithValues {
 		log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "reading continuously until EOF")
 
@@ -112,6 +114,9 @@ func ReqWithErrorWithSessionNumber(
 				if err == io.EOF {
 					// Nothing more to read, we returns nothing because we have already written to w.
 					log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "EOF body " + string(req.URL.Host))
+
+					log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "writing OK header nothing more to read")
+					w.WriteHeader(resp.StatusCode)
 					return nil, nil
 				} else {
 					// Error during read.
@@ -144,6 +149,10 @@ func ReqWithErrorWithSessionNumber(
 			return nil, err
 		}
 		log.G(ctx).Debug(string(returnValue))
+
+		log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "writing OK header")
+		w.WriteHeader(resp.StatusCode)
+
 		return returnValue, nil
 	}
 }
