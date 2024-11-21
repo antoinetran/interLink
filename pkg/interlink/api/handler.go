@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/containerd/containerd/log"
 
@@ -42,6 +43,10 @@ func ReqWithError(
 	return ReqWithErrorWithSessionNumber(ctx, req, w, start, span, respondWithValues, 0)
 }
 
+func addSessionNumber(req *http.Request, sessionNumber int) {
+	req.Header.Set("InterLink-Http-Session", strconv.Itoa(sessionNumber))
+}
+
 func ReqWithErrorWithSessionNumber(
 	ctx context.Context,
 	req *http.Request,
@@ -53,8 +58,11 @@ func ReqWithErrorWithSessionNumber(
 ) ([]byte, error) {
 	req.Header.Set("Content-Type", "application/json")
 	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "doing request: " + fmt.Sprintf("%#v", req))
-	resp, err := DoReq(req)
 
+	// Add session number for end-to-end from API to InterLink plugin (eg interlink-slurm-plugin)
+	addSessionNumber(req, sessionNumber)
+
+	resp, err := DoReq(req)
 	if err != nil {
 		statusCode := http.StatusInternalServerError
 		w.WriteHeader(statusCode)
@@ -83,10 +91,13 @@ func ReqWithErrorWithSessionNumber(
 		return nil, fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"call exit status: %d. Body: %s", statusCode, ret)
 	}
 
+	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "writing OK header")
 	w.WriteHeader(resp.StatusCode)
 	types.SetDurationSpan(start, span, types.WithHTTPReturnCode(resp.StatusCode))
 
 	if respondWithValues {
+		log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "reading continuously until EOF")
+
 		// In this case, we return continuously the values in the w, instead of reading it all. This allows for logs to be followed.
 		bodyReader := bufio.NewReader(resp.Body)
 
@@ -105,14 +116,14 @@ func ReqWithErrorWithSessionNumber(
 				} else {
 					// Error during read.
 					w.WriteHeader(http.StatusInternalServerError)
-					return nil, fmt.Errorf(GetSessionNumberMessage(sessionNumber)+": Could not read HTTP body: see error %w", err)
+					return nil, fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"Could not read HTTP body: see error %w", err)
 				}
 			}
 			log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Received some bytes from InterLink sidecar")
 			_, err = w.Write(bufferBytes[:n])
 			if err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
-				return nil, fmt.Errorf("could not write during ReqWithError() error: %w", err)
+				return nil, fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"could not write during ReqWithError() error: %w", err)
 			}
 
 			// Flush otherwise it will take time to appear in kubectl logs.
@@ -125,6 +136,7 @@ func ReqWithErrorWithSessionNumber(
 
 		}
 	} else {
+		log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "reading all body once for all")
 		returnValue, err := io.ReadAll(resp.Body)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
