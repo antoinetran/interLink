@@ -143,8 +143,11 @@ func ReqWithErrorComplex(
 		// 4096 is bufio.NewReader default buffer size.
 		bufferBytes := make([]byte, 4096)
 
-		// WriteHeader as soon as one stream of logs is received. This ensures we enable HTTP streaming by sending related response headers.
-		isWriteHeaderDone := false
+		// WriteHeader ASAP. This ensures we enable HTTP streaming by sending related response headers.
+		// If we wait for InterLink plugin to be ready (aka for e.g.: running a Slurm job after it gets ressources),
+		// we would be over the 30s limit of a HTTP request for non HTTP streaming mode.
+		log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "doing write OK header only once.")
+		w.WriteHeader(resp.StatusCode)
 
 		// Looping until we get EOF from sidecar.
 		for {
@@ -162,12 +165,6 @@ func ReqWithErrorComplex(
 				}
 			}
 			log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Received some bytes from InterLink sidecar")
-			if !isWriteHeaderDone {
-				log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "doing write OK header nothing once.")
-				w.WriteHeader(resp.StatusCode)
-				isWriteHeaderDone = true
-			}
-
 			_, err = w.Write(bufferBytes[:n])
 			if err != nil {
 				w.WriteHeader(http.StatusInternalServerError)
