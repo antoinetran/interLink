@@ -64,7 +64,8 @@ func ReqWithErrorWithSessionNumber(
 
 	if respondWithValues {
 		// Case continuous following logs, thus HTTP stream!! Otherwise the TCP connection will break as soon as the request is done.
-		w.Header().Set("Connection", "Keep-Alive")
+		log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "adding HTTP streaming headers for keep-alive and chunk")
+		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("Transfer-Encoding", "chunked")
 	}
 
