@@ -122,7 +122,7 @@ func (h *InterLinkHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "InterLink: forwarding GetLogs call to sidecar")
-	_, err = ReqWithErrorWithSessionNumber(h.Ctx, req, w, start, span, true, sessionNumber)
+	_, err = ReqWithErrorComplex(h.Ctx, req, w, start, span, true, false, sessionNumber)
 	if err != nil {
 		log.L.Error(err)
 		return

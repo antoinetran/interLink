@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -41,20 +42,23 @@ func ReqWithError(
 ) ([]byte, error) {
 	// Any non log request has -1 special value.
 	// TODO: add sessionNumber to other API call?
-	return ReqWithErrorWithSessionNumber(ctx, req, w, start, span, respondWithValues, -1)
+	return ReqWithErrorComplex(ctx, req, w, start, span, respondWithValues, true, -1)
 }
 
 func addSessionNumber(req *http.Request, sessionNumber int) {
 	req.Header.Set("InterLink-Http-Session", strconv.Itoa(sessionNumber))
 }
 
-func ReqWithErrorWithSessionNumber(
+// respondWithReturn: if false, return nil. Useful when body is too big to be contained in one big string.
+// sessionNumber: integer number for debugging purpose, generated from InterLink VK, to follow HTTP request from end-to-end.
+func ReqWithErrorComplex(
 	ctx context.Context,
 	req *http.Request,
 	w http.ResponseWriter,
 	start int64,
 	span trace.Span,
 	respondWithValues bool,
+	respondWithReturn bool,
 	sessionNumber int,
 ) ([]byte, error) {
 	req.Header.Set("Content-Type", "application/json")
@@ -95,92 +99,92 @@ func ReqWithErrorWithSessionNumber(
 		return nil, fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"call exit status: %d. Body: %s", statusCode, ret)
 	}
 
-	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "reading all body once for all")
-	// This can be long in case of HTTP streaming.
-	returnValue, err := io.ReadAll(resp.Body)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		errWithContext := fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"error during ReadAll() of ReqWithErrorWithSessionNumber see error %w", err)
-		log.G(ctx).Error(errWithContext)
-		return nil, errWithContext
-	}
-	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "reading all body once for all done")
-
-	w.WriteHeader(resp.StatusCode)
 	types.SetDurationSpan(start, span, types.WithHTTPReturnCode(resp.StatusCode))
 
-	if respondWithValues {
-		_, err = w.Write(returnValue)
+	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "before respondWithValues")
+
+	if respondWithReturn {
+
+		log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "reading all body once for all")
+		returnValue, err := io.ReadAll(resp.Body)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			errWithContext := fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"error during Write() of ReqWithErrorWithSessionNumber see error %w", err)
+			errWithContext := fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"error doing ReadAll() of ReqWithErrorComplex see error %w", err)
 			log.G(ctx).Error(errWithContext)
+			return nil, errWithContext
+		}
+
+		log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "writing OK header because we could read the whole response.")
+		w.WriteHeader(resp.StatusCode)
+
+		if respondWithValues {
+			_, err = w.Write(returnValue)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				errWithContext := fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"error doing Write() of ReqWithErrorComplex see error %w", err)
+				log.G(ctx).Error(errWithContext)
+				return nil, errWithContext
+			}
+		}
+
+		return returnValue, nil
+	}
+
+	// Case no return needed.
+
+	if respondWithValues {
+		// Because no return needed, we can write continuously instead of writing one big block of data.
+		// Useful to get following logs.
+		log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "reading continuously until EOF")
+
+		// In this case, we return continuously the values in the w, instead of reading it all. This allows for logs to be followed.
+		bodyReader := bufio.NewReader(resp.Body)
+
+		// 4096 is bufio.NewReader default buffer size.
+		bufferBytes := make([]byte, 4096)
+
+		// WriteHeader as soon as one stream of logs is received. This ensures we enable HTTP streaming by sending related response headers.
+		isWriteHeaderDone := false
+
+		// Looping until we get EOF from sidecar.
+		for {
+			log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Reading some bytes from InterLink sidecar " + string(req.RequestURI))
+			n, err := bodyReader.Read(bufferBytes)
+			if err != nil {
+				if err == io.EOF {
+					// Nothing more to read, we returns nothing because we have already written to w.
+					log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "EOF body " + string(req.URL.Host))
+					return nil, nil
+				} else {
+					// Error during read.
+					w.WriteHeader(http.StatusInternalServerError)
+					return nil, fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"Could not read HTTP body: see error %w", err)
+				}
+			}
+			log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Received some bytes from InterLink sidecar")
+			if !isWriteHeaderDone {
+				log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "doing write OK header nothing once.")
+				w.WriteHeader(resp.StatusCode)
+				isWriteHeaderDone = true
+			}
+
+			_, err = w.Write(bufferBytes[:n])
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return nil, fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"could not write during ReqWithError() error: %w", err)
+			}
+
+			// Flush otherwise it will take time to appear in kubectl logs.
+			if f, ok := w.(http.Flusher); ok {
+				log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Wrote some logs, now flushing...")
+				f.Flush()
+			} else {
+				log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Wrote some logs but could not flush because server does not support Flusher. It means the logs will take time to appear.")
+			}
+
 		}
 	}
 
-	return returnValue, nil
-	/*
-
-		types.SetDurationSpan(start, span, types.WithHTTPReturnCode(resp.StatusCode))
-
-		log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "before respondWithValues")
-		if respondWithValues {
-			log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "reading continuously until EOF")
-
-			// In this case, we return continuously the values in the w, instead of reading it all. This allows for logs to be followed.
-			bodyReader := bufio.NewReader(resp.Body)
-
-			// 4096 is bufio.NewReader default buffer size.
-			bufferBytes := make([]byte, 4096)
-
-			// Looping until we get EOF from sidecar.
-			for {
-				log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Reading some bytes from InterLink sidecar " + string(req.RequestURI))
-				n, err := bodyReader.Read(bufferBytes)
-				if err != nil {
-					if err == io.EOF {
-						// Nothing more to read, we returns nothing because we have already written to w.
-						log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "EOF body " + string(req.URL.Host))
-
-						log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "writing OK header nothing more to read")
-						w.WriteHeader(resp.StatusCode)
-						return nil, nil
-					} else {
-						// Error during read.
-						w.WriteHeader(http.StatusInternalServerError)
-						return nil, fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"Could not read HTTP body: see error %w", err)
-					}
-				}
-				log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Received some bytes from InterLink sidecar")
-				_, err = w.Write(bufferBytes[:n])
-				if err != nil {
-					w.WriteHeader(http.StatusInternalServerError)
-					return nil, fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"could not write during ReqWithError() error: %w", err)
-				}
-
-				// Flush otherwise it will take time to appear in kubectl logs.
-				if f, ok := w.(http.Flusher); ok {
-					log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Wrote some logs, now flushing...")
-					f.Flush()
-				} else {
-					log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Wrote some logs but could not flush because server does not support Flusher. It means the logs will take time to appear.")
-				}
-
-			}
-		} else {
-			log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "reading all body once for all")
-			returnValue, err := io.ReadAll(resp.Body)
-			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				log.G(ctx).Error(err)
-				return nil, err
-			}
-			log.G(ctx).Debug(string(returnValue))
-
-			log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "writing OK header")
-			w.WriteHeader(resp.StatusCode)
-
-			return returnValue, nil
-		}
-	*/
+	// Case no respondWithValue no respondWithReturn , it means we are doing a request and not using response.
+	return nil, nil
 }
