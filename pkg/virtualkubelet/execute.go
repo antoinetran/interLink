@@ -213,8 +213,9 @@ func createRequest(ctx context.Context, config Config, pod types.PodCreateReques
 
 	resp, err := doRequest(req, token)
 	if err != nil {
-		log.L.Error(err)
-		return nil, err
+		errWithContext := fmt.Errorf("error doing doRequest() in createRequest() log request: %s error: %w", fmt.Sprintf("%#v", req), err)
+		log.L.Error(errWithContext)
+		return nil, errWithContext
 	}
 
 	if resp != nil {
@@ -223,10 +224,12 @@ func createRequest(ctx context.Context, config Config, pod types.PodCreateReques
 		if resp.StatusCode != http.StatusOK {
 			return nil, errors.New("Unexpected error occured while creating Pods. Status code: " + strconv.Itoa(resp.StatusCode) + ". Check InterLink's logs for further informations")
 		}
+		log.L.Debug("before readAll in doing doRequest() in createRequest()")
 		returnValue, err = io.ReadAll(resp.Body)
 		if err != nil {
-			log.L.Error(err)
-			return nil, err
+			errWithContext := fmt.Errorf("error doing ReadAll() in createRequest() log request: %s error: %w", fmt.Sprintf("%#v", req), err)
+			log.L.Error(errWithContext)
+			return nil, errWithContext
 		}
 	}
 
@@ -494,10 +497,12 @@ func RemoteExecution(ctx context.Context, config Config, p *Provider, pod *v1.Po
 			return err
 		}
 
+		log.G(ctx).Debug("Pod " + pod.Name + " with Job ID " + resp.PodJID + " before json.Unmarshal()")
 		// get remote job ID and annotate it into the pod
 		err = json.Unmarshal(returnVal, &resp)
 		if err != nil {
-			return err
+			errWithContext := fmt.Errorf("error doing Unmarshal() in RemoteExecution() log request: %s error: %w", fmt.Sprintf("%#v", req), err)
+			return errWithContext
 		}
 
 		if string(pod.UID) == resp.PodUID {
