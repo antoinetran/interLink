@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -37,7 +38,8 @@ func (h *InterLinkHandler) StatusHandler(w http.ResponseWriter, r *http.Request)
 
 	err = json.Unmarshal(bodyBytes, &pods)
 	if err != nil {
-		log.G(h.Ctx).Error(err)
+		errWithContext := fmt.Errorf("error doing Unmarshal() in StatusHandler() error detail: %s error: %w", fmt.Sprintf("%#v", err), err)
+		log.G(h.Ctx).Error(errWithContext)
 	}
 
 	span.SetAttributes(

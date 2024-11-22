@@ -551,7 +551,8 @@ func checkPodsStatus(ctx context.Context, p *Provider, podsList []*v1.Pod, token
 
 		err = json.Unmarshal(returnVal, &ret)
 		if err != nil {
-			return nil, err
+			errWithContext := fmt.Errorf("error doing Unmarshal() in checkPodsStatus() error detail: %s error: %w", fmt.Sprintf("%#v", err), err)
+			return nil, errWithContext
 		}
 
 		// if there is a pod status available go ahead to match with the latest state available in etcd
