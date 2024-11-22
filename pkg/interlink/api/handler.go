@@ -132,6 +132,12 @@ func ReqWithErrorComplex(
 
 	// Case no return needed.
 
+	// WriteHeader ASAP. This ensures if we need HTTP streaming, that the related response headers are sent.
+	// If we wait for InterLink plugin to be ready (aka for e.g.: running a Slurm job after it gets ressources),
+	// we would be over the 30s limit of a HTTP request for non HTTP streaming mode.
+	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "doing write OK header ASAP.")
+	w.WriteHeader(resp.StatusCode)
+
 	if respondWithValues {
 		// Because no return needed, we can write continuously instead of writing one big block of data.
 		// Useful to get following logs.
@@ -142,12 +148,6 @@ func ReqWithErrorComplex(
 
 		// 4096 is bufio.NewReader default buffer size.
 		bufferBytes := make([]byte, 4096)
-
-		// WriteHeader ASAP. This ensures we enable HTTP streaming by sending related response headers.
-		// If we wait for InterLink plugin to be ready (aka for e.g.: running a Slurm job after it gets ressources),
-		// we would be over the 30s limit of a HTTP request for non HTTP streaming mode.
-		log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "doing write OK header only once.")
-		w.WriteHeader(resp.StatusCode)
 
 		// Looping until we get EOF from sidecar.
 		for {
