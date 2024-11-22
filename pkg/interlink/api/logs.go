@@ -111,6 +111,16 @@ func (h *InterLinkHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+
+	if req2.Opts.Follow {
+		// Warning, these headers are not sent until a WriteHeader(), that should happen hopefully before the default HTTP request timeout of 30s.
+		// If the headers are not sent before 30s, the connection will break.
+		// Also response headers should be sent before WriteHeader, because if after, they are ignored.
+		log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "adding HTTP streaming headers for keep-alive and chunk")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Transfer-Encoding", "chunked")
+	}
+
 	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "InterLink: forwarding GetLogs call to sidecar")
 	_, err = ReqWithErrorWithSessionNumber(h.Ctx, req, w, start, span, true, sessionNumber)
 	if err != nil {
