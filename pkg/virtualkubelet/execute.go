@@ -501,7 +501,7 @@ func RemoteExecution(ctx context.Context, config Config, p *Provider, pod *v1.Po
 		// get remote job ID and annotate it into the pod
 		err = json.Unmarshal(returnVal, &resp)
 		if err != nil {
-			errWithContext := fmt.Errorf("error doing Unmarshal() in RemoteExecution() return value %s error detail %s error: %w", returnVal, fmt.Sprintf("%#v", req), fmt.Sprintf("%#v", err), err)
+			errWithContext := fmt.Errorf("error doing Unmarshal() in RemoteExecution() return value %s error detail %s error: %w", returnVal, fmt.Sprintf("%#v", err), err)
 			return errWithContext
 		}
 
