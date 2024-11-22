@@ -38,7 +38,7 @@ func (h *InterLinkHandler) StatusHandler(w http.ResponseWriter, r *http.Request)
 
 	err = json.Unmarshal(bodyBytes, &pods)
 	if err != nil {
-		errWithContext := fmt.Errorf("error doing Unmarshal() in StatusHandler() error detail: %s error: %w", fmt.Sprintf("%#v", err), err)
+		errWithContext := fmt.Errorf("error doing fisrt Unmarshal() in StatusHandler() error detail: %s error: %w", fmt.Sprintf("%#v", err), err)
 		log.G(h.Ctx).Error(errWithContext)
 	}
 
@@ -92,7 +92,8 @@ func (h *InterLinkHandler) StatusHandler(w http.ResponseWriter, r *http.Request)
 		if err != nil {
 			statusCode = http.StatusInternalServerError
 			w.WriteHeader(statusCode)
-			log.G(h.Ctx).Error(err)
+			errWithContext := fmt.Errorf("error doing Unmarshal() in StatusHandler() of req %s error detail: %s error: %w", fmt.Sprintf("%#v", req), fmt.Sprintf("%#v", err), err)
+			log.G(h.Ctx).Error(errWithContext)
 			return
 		}
 
