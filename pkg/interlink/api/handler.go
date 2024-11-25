@@ -68,7 +68,7 @@ func ReqWithErrorComplex(
 	addSessionNumber(req, sessionNumber)
 
 	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "writing OK header ASAP before synchronous doReq().")
-	w.WriteHeader(resp.StatusCode)
+	w.WriteHeader(http.StatusOK)
 
 	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "before DoReq()")
 	resp, err := DoReq(req)
