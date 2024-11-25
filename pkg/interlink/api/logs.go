@@ -117,8 +117,10 @@ func (h *InterLinkHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request
 		// If the headers are not sent before 30s, the connection will break.
 		// Also response headers should be sent before WriteHeader, because if after, they are ignored.
 		log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "adding HTTP streaming headers for keep-alive and chunk")
-		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("Connection", "Keep-Alive")
+		w.Header().Set("Keep-Alive", "timeout=50")
 		w.Header().Set("Transfer-Encoding", "chunked")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 	}
 
 	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "InterLink: forwarding GetLogs call to sidecar")
