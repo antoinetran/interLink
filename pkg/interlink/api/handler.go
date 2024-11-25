@@ -67,6 +67,9 @@ func ReqWithErrorComplex(
 	// Add session number for end-to-end from API to InterLink plugin (eg interlink-slurm-plugin)
 	addSessionNumber(req, sessionNumber)
 
+	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "writing OK header ASAP before synchronous doReq().")
+	w.WriteHeader(resp.StatusCode)
+
 	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "before DoReq()")
 	resp, err := DoReq(req)
 	if err != nil {
@@ -113,9 +116,6 @@ func ReqWithErrorComplex(
 			log.G(ctx).Error(errWithContext)
 			return nil, errWithContext
 		}
-
-		log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "writing OK header because we could read the whole response.")
-		w.WriteHeader(resp.StatusCode)
 
 		if respondWithValues {
 			_, err = w.Write(returnValue)
