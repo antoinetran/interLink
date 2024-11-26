@@ -71,13 +71,13 @@ func ReqWithErrorComplex(
 
 	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "writing OK header ASAP before synchronous doReq().")
 	w.WriteHeader(http.StatusOK)
-	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "flusing headers ASAP")
-	// Flush otherwise it will take time to appear in kubectl logs.
+	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "flushing headers ASAP")
+	// Flush headers ASAP so that the client is not blocked in request.
 	if f, ok := w.(http.Flusher); ok {
-		log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Wrote some logs, now flushing...")
+		log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Wrote headers, now flushing...")
 		f.Flush()
 	} else {
-		log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Wrote some logs but could not flush because server does not support Flusher. It means the logs will take time to appear.")
+		log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Wrote headers but could not flush because server does not support Flusher. It means the logs will take time to appear.")
 	}
 
 	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "before DoReq()")
@@ -142,12 +142,6 @@ func ReqWithErrorComplex(
 
 	// Case no return needed.
 
-	// WriteHeader ASAP. This ensures if we need HTTP streaming, that the related response headers are sent.
-	// If we wait for InterLink plugin to be ready (aka for e.g.: running a Slurm job after it gets ressources),
-	// we would be over the 30s limit of a HTTP request for non HTTP streaming mode.
-	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "doing write OK header ASAP.")
-	w.WriteHeader(resp.StatusCode)
-
 	if respondWithValues {
 		// Because no return needed, we can write continuously instead of writing one big block of data.
 		// Useful to get following logs.
@@ -161,7 +155,7 @@ func ReqWithErrorComplex(
 
 		// Looping until we get EOF from sidecar.
 		for {
-			log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Reading some bytes from InterLink sidecar " + string(req.RequestURI))
+			log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Trying to read some bytes from InterLink sidecar " + string(req.RequestURI))
 			n, err := bodyReader.Read(bufferBytes)
 			if err != nil {
 				if err == io.EOF {
