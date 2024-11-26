@@ -71,6 +71,14 @@ func ReqWithErrorComplex(
 
 	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "writing OK header ASAP before synchronous doReq().")
 	w.WriteHeader(http.StatusOK)
+	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "flusing headers ASAP")
+	// Flush otherwise it will take time to appear in kubectl logs.
+	if f, ok := w.(http.Flusher); ok {
+		log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Wrote some logs, now flushing...")
+		f.Flush()
+	} else {
+		log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Wrote some logs but could not flush because server does not support Flusher. It means the logs will take time to appear.")
+	}
 
 	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "before DoReq()")
 	resp, err := logHttpClient.Do(req)
