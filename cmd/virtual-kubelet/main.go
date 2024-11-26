@@ -332,7 +332,7 @@ func main() {
 	server := &http.Server{
 		Addr:              fmt.Sprintf("0.0.0.0:%s", kubeletPort),
 		Handler:           mux,
-		ReadTimeout:       30 * time.Second,
+		ReadTimeout:       10 * time.Second,
 		ReadHeaderTimeout: 10 * time.Second, // Required to limit the effects of the Slowloris attack.
 		TLSConfig: &tls.Config{
 			GetCertificate:     retriever,

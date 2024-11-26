@@ -367,6 +367,7 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 	}
 
 	reader := bytes.NewReader(bodyBytes)
+	http.DefaultClient.Timeout = 5 * time.Second
 	req, err := http.NewRequest(http.MethodGet, interLinkEndpoint+"/getLogs", reader)
 	if err != nil {
 		errWithContext := fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"error during HTTP request: %s/getLogs %w", interLinkEndpoint, err)

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/containerd/containerd/log"
 
@@ -24,6 +25,7 @@ type InterLinkHandler struct {
 }
 
 func DoReq(req *http.Request) (*http.Response, error) {
+	http.DefaultClient.Timeout = 15 * time.Second
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err

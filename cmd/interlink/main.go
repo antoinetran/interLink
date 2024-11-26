@@ -145,7 +145,7 @@ func main() {
 		server := http.Server{
 			Addr:              interLinkEndpoint,
 			Handler:           mutex,
-			ReadTimeout:       30 * time.Second,
+			ReadTimeout:       20 * time.Second,
 			ReadHeaderTimeout: 10 * time.Second,
 		}
 
