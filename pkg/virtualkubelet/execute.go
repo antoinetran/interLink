@@ -58,12 +58,15 @@ func traceExecute(ctx context.Context, pod *v1.Pod, name string, startHTTPCall i
 }
 
 func doRequest(req *http.Request, token string) (*http.Response, error) {
+	return doRequestWithClient(req, token, http.DefaultClient)
+}
+
+func doRequestWithClient(req *http.Request, token string, httpClient *http.Client) (*http.Response, error) {
 	if token != "" {
 		req.Header.Add("Authorization", "Bearer "+token)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	return http.DefaultClient.Do(req)
-
+	return httpClient.Do(req)
 }
 
 func getSidecarEndpoint(ctx context.Context, interLinkURL string, interLinkPort string) string {
@@ -367,7 +370,6 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 	}
 
 	reader := bytes.NewReader(bodyBytes)
-	http.DefaultClient.Timeout = 5 * time.Second
 	req, err := http.NewRequest(http.MethodGet, interLinkEndpoint+"/getLogs", reader)
 	if err != nil {
 		errWithContext := fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"error during HTTP request: %s/getLogs %w", interLinkEndpoint, err)
@@ -390,6 +392,15 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "before do HTTP request")
 	// Add session number for end-to-end from VK to API to InterLink plugin (eg interlink-slurm-plugin)
 	addSessionNumber(req, sessionNumber)
+
+	/*
+		//http.DefaultClient.Timeout = 0 * time.Second
+		var logHttpClient = &http.Client{
+			// Infinity instead of default 30s
+			Timeout: 0 * time.Second,
+		}
+		resp, err := doRequestWithClient(req, token, logHttpClient)
+	*/
 	resp, err := doRequest(req, token)
 	if err != nil {
 		log.G(ctx).Error(err)
