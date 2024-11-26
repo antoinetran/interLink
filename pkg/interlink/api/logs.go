@@ -111,20 +111,30 @@ func (h *InterLinkHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	var logHttpClient *http.Client
 
 	if req2.Opts.Follow {
-		// Warning, these headers are not sent until a WriteHeader(), that should happen hopefully before the default HTTP request timeout of 30s.
-		// If the headers are not sent before 30s, the connection will break.
-		// Also response headers should be sent before WriteHeader, because if after, they are ignored.
-		log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "adding HTTP streaming headers for keep-alive and chunk")
-		w.Header().Set("Connection", "Keep-Alive")
-		w.Header().Set("Keep-Alive", "timeout=50")
-		w.Header().Set("Transfer-Encoding", "chunked")
-		w.Header().Set("X-Content-Type-Options", "nosniff")
+		/*
+			// Warning, these headers are not sent until a WriteHeader(), that should happen hopefully before the default HTTP request timeout of 30s.
+			// If the headers are not sent before 30s, the connection will break.
+			// Also response headers should be sent before WriteHeader, because if after, they are ignored.
+			log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "adding HTTP streaming headers for keep-alive and chunk")
+			w.Header().Set("Connection", "Keep-Alive")
+			w.Header().Set("Keep-Alive", "timeout=50")
+			w.Header().Set("Transfer-Encoding", "chunked")
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+		*/
+		log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "InterLink: logs in follow mode, setting infinite timeout for Http Client.")
+		logHttpClient = &http.Client{
+			// For log in following mode, we request infinity timeout.
+			Timeout: 0 * time.Second,
+		}
+	} else {
+		logHttpClient = http.DefaultClient
 	}
 
 	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "InterLink: forwarding GetLogs call to sidecar")
-	_, err = ReqWithErrorComplex(h.Ctx, req, w, start, span, true, false, sessionNumber)
+	_, err = ReqWithErrorComplex(h.Ctx, req, w, start, span, true, false, sessionNumber, logHttpClient)
 	if err != nil {
 		log.L.Error(err)
 		return

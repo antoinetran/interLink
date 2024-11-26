@@ -43,7 +43,7 @@ func ReqWithError(
 ) ([]byte, error) {
 	// Any non log request has -1 special value.
 	// TODO: add sessionNumber to other API call?
-	return ReqWithErrorComplex(ctx, req, w, start, span, respondWithValues, true, -1)
+	return ReqWithErrorComplex(ctx, req, w, start, span, respondWithValues, true, -1, http.DefaultClient)
 }
 
 func addSessionNumber(req *http.Request, sessionNumber int) {
@@ -61,6 +61,7 @@ func ReqWithErrorComplex(
 	respondWithValues bool,
 	respondWithReturn bool,
 	sessionNumber int,
+	logHttpClient *http.Client,
 ) ([]byte, error) {
 	req.Header.Set("Content-Type", "application/json")
 	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "doing request: " + fmt.Sprintf("%#v", req))
@@ -72,7 +73,7 @@ func ReqWithErrorComplex(
 	w.WriteHeader(http.StatusOK)
 
 	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "before DoReq()")
-	resp, err := DoReq(req)
+	resp, err := logHttpClient.Do(req)
 	if err != nil {
 		statusCode := http.StatusInternalServerError
 		w.WriteHeader(statusCode)

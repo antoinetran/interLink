@@ -393,15 +393,14 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 	// Add session number for end-to-end from VK to API to InterLink plugin (eg interlink-slurm-plugin)
 	addSessionNumber(req, sessionNumber)
 
-	/*
-		//http.DefaultClient.Timeout = 0 * time.Second
-		var logHttpClient = &http.Client{
-			// Infinity instead of default 30s
-			Timeout: 0 * time.Second,
-		}
-		resp, err := doRequestWithClient(req, token, logHttpClient)
-	*/
-	resp, err := doRequest(req, token)
+	//http.DefaultClient.Timeout = 0 * time.Second
+	var logHttpClient = &http.Client{
+		// Infinity instead of default 30s
+		Timeout: 0 * time.Second,
+	}
+	resp, err := doRequestWithClient(req, token, logHttpClient)
+
+	//resp, err := doRequest(req, token)
 	if err != nil {
 		log.G(ctx).Error(err)
 		return nil, err
