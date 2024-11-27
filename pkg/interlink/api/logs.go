@@ -133,8 +133,15 @@ func (h *InterLinkHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request
 			}
 	*/
 
+	var logHttpClient = &http.Client{
+		//Timeout: 0 * time.Second,
+		Transport: &http.Transport{
+			DisableKeepAlives: true,
+		},
+	}
+
 	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "InterLink: forwarding GetLogs call to sidecar")
-	_, err = ReqWithErrorComplex(h.Ctx, req, w, start, span, true, false, sessionNumber, http.DefaultClient)
+	_, err = ReqWithErrorComplex(h.Ctx, req, w, start, span, true, false, sessionNumber, logHttpClient)
 	if err != nil {
 		log.L.Error(err)
 		return

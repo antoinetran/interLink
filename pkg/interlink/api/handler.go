@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/containerd/containerd/log"
 
@@ -175,8 +174,6 @@ func ReqWithErrorComplex(
 				if err == io.EOF {
 					// Nothing more to read, we returns nothing because we have already written to w.
 					log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "EOF body " + string(req.URL.Host))
-					// TODO: remove this sleep, however sometime the client gets EOF althought the server has sent unread bytes. Weird!
-					time.Sleep(2 * time.Second)
 					return nil, nil
 				} else {
 					// Error during read.
