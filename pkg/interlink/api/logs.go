@@ -136,7 +136,8 @@ func (h *InterLinkHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request
 	var logHttpClient = &http.Client{
 		//Timeout: 0 * time.Second,
 		Transport: &http.Transport{
-			DisableKeepAlives: true,
+			DisableKeepAlives:   true,
+			MaxIdleConnsPerHost: -1,
 		},
 	}
 

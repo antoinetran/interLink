@@ -397,7 +397,8 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 	var logHttpClient = &http.Client{
 		//Timeout: 0 * time.Second,
 		Transport: &http.Transport{
-			DisableKeepAlives: true,
+			DisableKeepAlives:   true,
+			MaxIdleConnsPerHost: -1,
 		},
 	}
 	resp, err := doRequestWithClient(req, token, logHttpClient)
