@@ -91,6 +91,12 @@ func ReqWithErrorComplex(
 	}
 	defer resp.Body.Close()
 
+	for key, values := range resp.Header {
+		for _, value := range values {
+			log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Response header: " + key + ": " + value)
+		}
+	}
+
 	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "before check status code")
 	if resp.StatusCode != http.StatusOK {
 		log.G(ctx).Error(GetSessionNumberMessage(sessionNumber) + "HTTP request in error.")
@@ -156,6 +162,13 @@ func ReqWithErrorComplex(
 		// Looping until we get EOF from sidecar.
 		for {
 			log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Trying to read some bytes from InterLink sidecar " + string(req.RequestURI))
+
+			for key, values := range resp.Header {
+				for _, value := range values {
+					log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Response header: " + key + ": " + value)
+				}
+			}
+
 			n, err := bodyReader.Read(bufferBytes)
 			if err != nil {
 				if err == io.EOF {
