@@ -111,6 +111,7 @@ func (h *InterLinkHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+
 	/*
 		var logHttpClient *http.Client
 

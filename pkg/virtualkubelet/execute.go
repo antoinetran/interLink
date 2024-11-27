@@ -414,9 +414,9 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 		}
 
 	*/
+	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Custom HttpClient for log with Keep-Alive disabled")
 	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Custom HttpClient for log with Keep-Alive disabled + tls: " + strconv.FormatBool(logHttpClient.Transport.(*http.Transport).TLSClientConfig.InsecureSkipVerify))
 	resp, err := doRequestWithClient(req, token, logHttpClient)
-
 	//resp, err := doRequest(req, token)
 	if err != nil {
 		log.G(ctx).Error(err)
