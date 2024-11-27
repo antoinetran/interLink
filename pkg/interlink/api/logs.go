@@ -2,7 +2,6 @@ package api
 
 import (
 	"bytes"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"io"
@@ -134,18 +133,27 @@ func (h *InterLinkHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request
 			}
 	*/
 
-	var logHttpClient = &http.Client{
-		//Timeout: 0 * time.Second,
-		Transport: &http.Transport{
-			DisableKeepAlives:   true,
-			MaxIdleConnsPerHost: -1,
-			// Gets the insecure flag from default client.
-			//TLSClientConfig: http.DefaultTransport.(*http.Transport).TLSClientConfig,
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
+	/*
+		var logHttpClient = &http.Client{
+			//Timeout: 0 * time.Second,
+			Transport: &http.Transport{
+				DisableKeepAlives:   true,
+				MaxIdleConnsPerHost: -1,
+				// Gets the insecure flag from default client.
+				//TLSClientConfig: http.DefaultTransport.(*http.Transport).TLSClientConfig,
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
 			},
-		},
-	}
+		}
+	*/
+
+	logTransport := http.DefaultTransport.(*http.Transport).Clone()
+	logTransport.DisableKeepAlives = true
+	logTransport.MaxIdleConnsPerHost = -1
+	var logHttpClient = &http.Client{Transport: logTransport}
+
+	log.G(h.Ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Custom HttpClient for log with Keep-Alive disabled + tls: " + strconv.FormatBool(logHttpClient.Transport.(*http.Transport).TLSClientConfig.InsecureSkipVerify))
 
 	log.G(h.Ctx).Info(GetSessionNumberMessage(sessionNumber) + "InterLink: forwarding GetLogs call to sidecar")
 	_, err = ReqWithErrorComplex(h.Ctx, req, w, start, span, true, false, sessionNumber, logHttpClient)

@@ -3,7 +3,6 @@ package virtualkubelet
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -395,18 +394,27 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 	addSessionNumber(req, sessionNumber)
 
 	//http.DefaultClient.Timeout = 0 * time.Second
-	var logHttpClient = &http.Client{
-		//Timeout: 0 * time.Second,
-		Transport: &http.Transport{
-			DisableKeepAlives:   true,
-			MaxIdleConnsPerHost: -1,
-			// Gets the insecure flag from default client.
-			//TLSClientConfig: http.DefaultTransport.(*http.Transport).TLSClientConfig,
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
+	logTransport := http.DefaultTransport.(*http.Transport).Clone()
+	logTransport.DisableKeepAlives = true
+	logTransport.MaxIdleConnsPerHost = -1
+	var logHttpClient = &http.Client{Transport: logTransport}
+	/*
+		logTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		var logHttpClient = &http.Client{
+			//Timeout: 0 * time.Second,
+			Transport: &http.Transport{
+				DisableKeepAlives:   true,
+				MaxIdleConnsPerHost: -1,
+				// Gets the insecure flag from default client.
+				//TLSClientConfig: http.DefaultTransport.(*http.Transport).TLSClientConfig,
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
 			},
-		},
-	}
+		}
+
+	*/
+	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Custom HttpClient for log with Keep-Alive disabled + tls: " + strconv.FormatBool(logHttpClient.Transport.(*http.Transport).TLSClientConfig.InsecureSkipVerify))
 	resp, err := doRequestWithClient(req, token, logHttpClient)
 
 	//resp, err := doRequest(req, token)
