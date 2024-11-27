@@ -3,6 +3,7 @@ package virtualkubelet
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -399,6 +400,11 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 		Transport: &http.Transport{
 			DisableKeepAlives:   true,
 			MaxIdleConnsPerHost: -1,
+			// Gets the insecure flag from default client.
+			//TLSClientConfig: http.DefaultTransport.(*http.Transport).TLSClientConfig,
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
 		},
 	}
 	resp, err := doRequestWithClient(req, token, logHttpClient)

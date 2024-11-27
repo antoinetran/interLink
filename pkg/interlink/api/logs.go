@@ -139,7 +139,10 @@ func (h *InterLinkHandler) GetLogsHandler(w http.ResponseWriter, r *http.Request
 			DisableKeepAlives:   true,
 			MaxIdleConnsPerHost: -1,
 			// Gets the insecure flag from default client.
-			TLSClientConfig: http.DefaultTransport.(*http.Transport).TLSClientConfig,
+			//TLSClientConfig: http.DefaultTransport.(*http.Transport).TLSClientConfig,
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
 		},
 	}
 
