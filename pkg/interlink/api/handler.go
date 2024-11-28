@@ -172,6 +172,17 @@ func ReqWithErrorComplex(
 			n, err := bodyReader.Read(bufferBytes)
 			if err != nil {
 				if err == io.EOF {
+					log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Received EOF and number of bytes: " + strconv.Itoa(n))
+
+					if n != 0 {
+						log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "Received after EOF some bytes from InterLink sidecar")
+						_, err = w.Write(bufferBytes[:n])
+						if err != nil {
+							w.WriteHeader(http.StatusInternalServerError)
+							return nil, fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"could not write during ReqWithError() error: %w", err)
+						}
+					}
+
 					// Nothing more to read, we returns nothing because we have already written to w.
 					log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "EOF body " + string(req.URL.Host))
 					return nil, nil
