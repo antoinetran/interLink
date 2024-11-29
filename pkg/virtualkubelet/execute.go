@@ -402,7 +402,9 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 		log.G(ctx).Error(err)
 		return nil, err
 	}
-	defer resp.Body.Close()
+	// resp.body must not be closed because the kubelet needs to consume it! This is the responsability of the caller to close it.
+	// Called here https://github.com/virtual-kubelet/virtual-kubelet/blob/v1.11.0/node/api/logs.go#L132
+	//defer resp.Body.Close()
 	log.G(ctx).Debug(sessionContextMessage, "after doRequestWithClient()")
 
 	types.SetDurationSpan(startHTTPCall, spanHTTP, types.WithHTTPReturnCode(resp.StatusCode))
