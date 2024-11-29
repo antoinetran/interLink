@@ -82,7 +82,8 @@ func (h *InterLinkHandler) StatusHandler(w http.ResponseWriter, r *http.Request)
 		req.Header.Set("Content-Type", "application/json")
 		log.G(h.Ctx).Debug("Interlink get status request content:", req)
 
-		bodyBytes, err = ReqWithError(h.Ctx, req, w, start, span, false)
+		sessionContext := GetSessionContext(req)
+		bodyBytes, err = ReqWithError(h.Ctx, req, w, start, span, false, true, sessionContext, http.DefaultClient)
 		if err != nil {
 			log.L.Error(err)
 			return

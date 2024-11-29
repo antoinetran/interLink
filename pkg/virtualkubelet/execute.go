@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -24,10 +25,6 @@ import (
 )
 
 const PodPhaseInitialize = "Initializing"
-
-func addSessionNumber(req *http.Request, sessionNumber int) {
-	req.Header.Set("InterLink-Http-Session", strconv.Itoa(sessionNumber))
-}
 
 func failedMount(ctx context.Context, failed *bool, name string, pod *v1.Pod, p *Provider) error {
 	*failed = true
@@ -113,6 +110,9 @@ func PingInterLink(ctx context.Context, config Config) (bool, int, error) {
 	defer spanHTTP.End()
 	defer types.SetDurationSpan(startHTTPCall, spanHTTP)
 
+	// Add session number for end-to-end from VK to API to InterLink plugin (eg interlink-slurm-plugin)
+	AddSessionContext(req, "PingInterLink#"+strconv.Itoa(rand.Intn(100000)))
+
 	resp, err := http.DefaultClient.Do(req)
 
 	if err != nil {
@@ -165,6 +165,9 @@ func updateCacheRequest(ctx context.Context, config Config, pod v1.Pod, token st
 	startHTTPCall := time.Now().UnixMicro()
 	spanHTTP := traceExecute(ctx, &pod, "UpdateCacheHttpCall", startHTTPCall)
 
+	// Add session number for end-to-end from VK to API to InterLink plugin (eg interlink-slurm-plugin)
+	AddSessionContext(req, "UpdateCache#"+strconv.Itoa(rand.Intn(100000)))
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		log.L.Error(err)
@@ -208,6 +211,9 @@ func createRequest(ctx context.Context, config Config, pod types.PodCreateReques
 	defer spanHTTP.End()
 	defer types.SetDurationSpan(startHTTPCall, spanHTTP)
 
+	// Add session number for end-to-end from VK to API to InterLink plugin (eg interlink-slurm-plugin)
+	AddSessionContext(req, "CreatePod#"+strconv.Itoa(rand.Intn(100000)))
+
 	resp, err := doRequest(req, token)
 	if err != nil {
 		return nil, fmt.Errorf("error doing doRequest() in createRequest() log request: %s error: %w", fmt.Sprintf("%#v", req), err)
@@ -246,6 +252,9 @@ func deleteRequest(ctx context.Context, config Config, pod *v1.Pod, token string
 
 	startHTTPCall := time.Now().UnixMicro()
 	spanHTTP := traceExecute(ctx, pod, "DeleteHttpCall", startHTTPCall)
+
+	// Add session number for end-to-end from VK to API to InterLink plugin (eg interlink-slurm-plugin)
+	AddSessionContext(req, "DeletePod#"+strconv.Itoa(rand.Intn(100000)))
 
 	resp, err := doRequest(req, token)
 	if err != nil {
@@ -306,6 +315,9 @@ func statusRequest(ctx context.Context, config Config, podsList []*v1.Pod, token
 	defer spanHTTP.End()
 	defer types.SetDurationSpan(startHTTPCall, spanHTTP)
 
+	// Add session number for end-to-end from VK to API to InterLink plugin (eg interlink-slurm-plugin)
+	AddSessionContext(req, "GetStatus#"+strconv.Itoa(rand.Intn(100000)))
+
 	resp, err := doRequest(req, token)
 	if err != nil {
 		return nil, err
@@ -333,7 +345,7 @@ func statusRequest(ctx context.Context, config Config, podsList []*v1.Pod, token
 // LogRetrieval performs a REST call to the InterLink API when the user ask for a log retrieval. Compared to create/delete/status request, a way smaller struct is marshalled and sent.
 // This struct only includes a minimum data set needed to identify the job/container to get the logs from.
 // Returns the call response and/or the first encountered error
-func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruct, sessionNumber int) (io.ReadCloser, error) {
+func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruct, sessionContext string) (io.ReadCloser, error) {
 	tracer := otel.Tracer("interlink-service")
 	interLinkEndpoint := getSidecarEndpoint(ctx, config.InterlinkURL, config.Interlinkport)
 
@@ -347,9 +359,11 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 		token = string(b)
 	}
 
+	sessionContextMessage := GetSessionContextMessage(sessionContext)
+
 	bodyBytes, err := json.Marshal(logsRequest)
 	if err != nil {
-		errWithContext := fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"error during marshalling to JSON the log request: %s. Bodybytes: %s error: %w", fmt.Sprintf("%#v", logsRequest), bodyBytes, err)
+		errWithContext := fmt.Errorf(sessionContextMessage+"error during marshalling to JSON the log request: %s. Bodybytes: %s error: %w", fmt.Sprintf("%#v", logsRequest), bodyBytes, err)
 		log.G(ctx).Error(errWithContext)
 		return nil, errWithContext
 	}
@@ -357,7 +371,7 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 	reader := bytes.NewReader(bodyBytes)
 	req, err := http.NewRequest(http.MethodGet, interLinkEndpoint+"/getLogs", reader)
 	if err != nil {
-		errWithContext := fmt.Errorf(GetSessionNumberMessage(sessionNumber)+"error during HTTP request: %s/getLogs %w", interLinkEndpoint, err)
+		errWithContext := fmt.Errorf(sessionContextMessage+"error during HTTP request: %s/getLogs %w", interLinkEndpoint, err)
 		log.G(ctx).Error(errWithContext)
 		return nil, errWithContext
 	}
@@ -374,9 +388,9 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 	defer spanHTTP.End()
 	defer types.SetDurationSpan(startHTTPCall, spanHTTP)
 
-	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "before doRequestWithClient()")
+	log.G(ctx).Debug(sessionContextMessage, "before doRequestWithClient()")
 	// Add session number for end-to-end from VK to API to InterLink plugin (eg interlink-slurm-plugin)
-	addSessionNumber(req, sessionNumber)
+	AddSessionContext(req, sessionContext)
 
 	logTransport := http.DefaultTransport.(*http.Transport).Clone()
 	//logTransport.DisableKeepAlives = true
@@ -389,11 +403,11 @@ func LogRetrieval(ctx context.Context, config Config, logsRequest types.LogStruc
 		return nil, err
 	}
 	defer resp.Body.Close()
-	log.G(ctx).Debug(GetSessionNumberMessage(sessionNumber) + "after doRequestWithClient()")
+	log.G(ctx).Debug(sessionContextMessage, "after doRequestWithClient()")
 
 	types.SetDurationSpan(startHTTPCall, spanHTTP, types.WithHTTPReturnCode(resp.StatusCode))
 	if resp.StatusCode != http.StatusOK {
-		err = errors.New(GetSessionNumberMessage(sessionNumber)+"Unexpected error occured while getting logs. Status code: " + strconv.Itoa(resp.StatusCode) + ". Check InterLink's logs for further informations")
+		err = errors.New(sessionContextMessage + "Unexpected error occured while getting logs. Status code: " + strconv.Itoa(resp.StatusCode) + ". Check InterLink's logs for further informations")
 	}
 
 	// return io.NopCloser(bufio.NewReader(resp.Body)), err
