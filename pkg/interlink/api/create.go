@@ -67,6 +67,11 @@ func (h *InterLinkHandler) CreateHandler(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	log.G(h.Ctx).Debug("pod struct bytes", string(bodyBytes))
+	for _, secret := range pod.Secrets {
+		log.G(h.Ctx).Debug("pod struct secret: ", secret.String(), " name: ", secret.Name, " type: ", secret.Type)
+	}
+
 	retrievedData = append(retrievedData, data)
 
 	if retrievedData != nil {
