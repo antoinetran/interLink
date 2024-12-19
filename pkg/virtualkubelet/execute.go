@@ -18,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	trace "go.opentelemetry.io/otel/trace"
+	authenticationv1 "k8s.io/api/authentication/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -26,8 +27,8 @@ import (
 
 const PodPhaseInitialize = "Initializing"
 
-func failedMount(ctx context.Context, failed *bool, name string, pod *v1.Pod, p *Provider) error {
-	*failed = true
+func failedMount(ctx context.Context, failedAndWait *bool, name string, pod *v1.Pod, p *Provider) error {
+	*failedAndWait = true
 	log.G(ctx).Warning("Unable to find ConfigMap " + name + " for pod " + pod.Name + ". Waiting for it to be initialized")
 	if pod.Status.Phase != PodPhaseInitialize {
 		pod.Status.Phase = PodPhaseInitialize
@@ -415,6 +416,125 @@ func LogRetrieval(
 	return resp.Body, err
 }
 
+func remoteExecutionHandleProjectedSource(
+	ctx context.Context, p *Provider, pod *v1.Pod, source v1.VolumeProjection, req types.PodCreateRequests, volName string,
+) error {
+	var projectedVolume v1.ConfigMap
+	projectedVolume.Name = volName
+	req.ProjectedVolumeMaps = append(req.ProjectedVolumeMaps, projectedVolume)
+	//projectedVolume.Name =
+	switch {
+	case source.ServiceAccountToken != nil:
+		/* Case
+		   - serviceAccountToken:
+		       expirationSeconds: 3600
+		       path: token
+		*/
+		log.G(ctx).Debug("Volume is a projected volume typed serviceAccountToken")
+
+		// Now using TokenRequest API (https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/)
+		var expirationSeconds int64
+		/*
+			TODO: honor the expirationSeconds field and implement a rotation.
+			if source.ServiceAccountToken.ExpirationSeconds != nil {
+				expirationSeconds = *source.ServiceAccountToken.ExpirationSeconds
+			} else {
+				// If not expiration is set, set to 1h.
+				expirationSeconds = 3600
+			}
+		*/
+		// Infinite = 100 years
+		expirationSeconds = 100 * 365 * 24 * 3600
+
+		// Bount it to POD, so that token is deleted if pod is deleted.
+		bountObjectRef := &authenticationv1.BoundObjectReference{
+			Kind: "Pod",
+			UID:  pod.UID,
+			Name: pod.Name,
+		}
+		tokenRequest := &authenticationv1.TokenRequest{
+			Spec: authenticationv1.TokenRequestSpec{
+				Audiences:         []string{"api", "https://kubernetes.default.svc"},
+				ExpirationSeconds: &expirationSeconds,
+				BoundObjectRef:    bountObjectRef,
+			},
+		}
+		log.G(ctx).Debug("Requesting token...")
+		tokenRequestResult, err := p.clientSet.CoreV1().ServiceAccounts(pod.Namespace).CreateToken(
+			ctx, pod.Spec.ServiceAccountName, tokenRequest, metav1.CreateOptions{})
+		if err != nil {
+			log.G(ctx).Error("error during token request in RemoteExecution() ", err)
+		}
+		log.G(ctx).Debug("could get token ", tokenRequestResult.Status.Token)
+
+		// Add found token to result.
+		projectedVolume.Data[source.ServiceAccountToken.Path] = tokenRequestResult.Status.Token
+
+	case source.ConfigMap != nil:
+		/* Case
+		   - configMap:
+		       items:
+		         - key: ca.crt
+		           path: ca.crt
+		       name: kube-root-ca.crt
+		*/
+		for _, item := range source.ConfigMap.Items {
+			cfgmap, err := p.clientSet.CoreV1().ConfigMaps(pod.Namespace).Get(ctx, source.ConfigMap.Name, metav1.GetOptions{})
+			if err != nil {
+				return fmt.Errorf("error during retrieval of ConfigMap %s error: %w", source.ConfigMap.Name, err)
+			}
+			if value, ok := cfgmap.Data[item.Key]; ok {
+				projectedVolume.Data[item.Path] = value
+			} else {
+				return fmt.Errorf("error during retrieval of key %s of (existing) ConfigMap %s error: %w", item.Key, source.ConfigMap.Name, err)
+			}
+		}
+
+	case source.DownwardAPI != nil:
+		/* Case
+		- downwardAPI:
+			items:
+			- fieldRef:
+				apiVersion: v1
+				fieldPath: metadata.namespace
+				path: namespace
+		*/
+		// https://kubernetes.io/docs/concepts/workloads/pods/downward-api/
+		// See URL doc above, that describe what type of DownwardAPI to expect from volume. For now, only FieldRef is supported.
+		// The rest are ignored.
+		for _, item := range source.DownwardAPI.Items {
+			switch {
+
+			case item.FieldRef != nil:
+				switch item.FieldRef.FieldPath {
+				case "metadata.name":
+					projectedVolume.Data[item.Path] = pod.Name
+
+				case "metadata.namespace":
+					projectedVolume.Data[item.Path] = pod.Namespace
+
+				case "metadata.uid":
+					projectedVolume.Data[item.Path] = string(pod.UID)
+
+				// TODO implement DownwardAPI annotation and label
+
+				default:
+					log.G(ctx).Warningf("in pod %s unsupported DownwardAPI FieldPath %s in InterLink, ignoring this source...", pod.Name, item.FieldRef.FieldPath)
+				}
+
+			case item.ResourceFieldRef != nil:
+				// TODO implement DownwardAPI resourceFieldRef
+				log.G(ctx).Warningf("in pod %s unsupported DownwardAPI resourceFieldRef in InterLink, ignoring this source...", pod.Name)
+
+			default:
+				log.G(ctx).Warningf("in pod %s unsupported unknown DownwardAPI in InterLink, ignoring this source...", pod.Name)
+			}
+
+		}
+	}
+	return nil
+}
+
 // RemoteExecution is called by the VK everytime a Pod is being registered or deleted to/from the VK.
 // Depending on the mode (CREATE/DELETE), it performs different actions, making different REST calls.
 // Note: for the CREATE mode, the function gets stuck up to 5 minutes waiting for every missing ConfigMap/Secret.
@@ -445,36 +565,55 @@ func RemoteExecution(ctx context.Context, config Config, p *Provider, pod *v1.Po
 			return nil
 		}
 
-		var failed bool
+		// Sometime the get secret or configmap can fail because it didn't have time to initialize, thus this
+		// is not a true failure. We use this flag to wait.
+		var failedAndWait bool
 
+		log.G(ctx).Debug("Looking at volumes")
 		for _, volume := range pod.Spec.Volumes {
+			log.G(ctx).Debug("Looking at volume ", volume)
 			for {
+				failedAndWait = false
 				if timeNow.Sub(startTime).Seconds() < time.Hour.Minutes()*5 {
-					if volume.ConfigMap != nil {
+					switch {
+					case volume.ConfigMap != nil:
 						cfgmap, err := p.clientSet.CoreV1().ConfigMaps(pod.Namespace).Get(ctx, volume.ConfigMap.Name, metav1.GetOptions{})
 						if err != nil {
-							err = failedMount(ctx, &failed, volume.ConfigMap.Name, pod, p)
+							err = failedMount(ctx, &failedAndWait, volume.ConfigMap.Name, pod, p)
 							if err != nil {
 								return err
 							}
 						} else {
-							failed = false
 							req.ConfigMaps = append(req.ConfigMaps, *cfgmap)
 						}
-					} else if volume.Secret != nil {
+
+					case volume.Projected != nil:
+						// The service account token uses the projected volume in K8S >= 1.24.
+
+						for _, source := range volume.Projected.Sources {
+							err := remoteExecutionHandleProjectedSource(ctx, p, pod, source, req, volume.Name)
+							if err != nil {
+								return err
+							} else {
+								failedAndWait = false
+							}
+						}
+
+					case volume.Secret != nil:
 						scrt, err := p.clientSet.CoreV1().Secrets(pod.Namespace).Get(ctx, volume.Secret.SecretName, metav1.GetOptions{})
 						if err != nil {
-							err = failedMount(ctx, &failed, volume.Secret.SecretName, pod, p)
+							err = failedMount(ctx, &failedAndWait, volume.Secret.SecretName, pod, p)
 							if err != nil {
 								return err
 							}
 						} else {
-							failed = false
 							req.Secrets = append(req.Secrets, *scrt)
 						}
+					default:
+						log.G(ctx).Warningf("ignoring unsupported volume %s for Pod %s", volume.Name, pod.Name)
 					}
 
-					if failed {
+					if failedAndWait {
 						time.Sleep(time.Second)
 						continue
 					}
@@ -504,7 +643,7 @@ func RemoteExecution(ctx context.Context, config Config, p *Provider, pod *v1.Po
 			return fmt.Errorf("error doing createRequest() in RemoteExecution() return value %s error detail %s error: %w", returnVal, fmt.Sprintf("%#v", err), err)
 		}
 
-		log.G(ctx).Debug("Pod " + pod.Name + " with Job ID " + resp.PodJID + " before json.Unmarshal()")
+		log.G(ctx).Debug("Pod ", pod.Name, " with Job ID ", resp.PodJID, " before json.Unmarshal()")
 		// get remote job ID and annotate it into the pod
 		err = json.Unmarshal(returnVal, &resp)
 		if err != nil {
