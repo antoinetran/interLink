@@ -443,7 +443,9 @@ func RemoteExecution(ctx context.Context, config Config, p *Provider, pod *v1.Po
 
 		var failed bool
 
+		log.G(ctx).Debug("Looking at volumes")
 		for _, volume := range pod.Spec.Volumes {
+			log.G(ctx).Debug("Looking at volume ", volume)
 			for {
 				if timeNow.Sub(startTime).Seconds() < time.Hour.Minutes()*5 {
 					if volume.ConfigMap != nil {
@@ -473,6 +475,9 @@ func RemoteExecution(ctx context.Context, config Config, p *Provider, pod *v1.Po
 						sources := volume.Projected.Sources
 						for _, source := range sources {
 							if source.ServiceAccountToken != nil {
+
+								log.G(ctx).Debug("Volume is a projected volume typed serviceAccountToken")
+
 								// Now using TokenRequest API (https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/)
 								var expirationSeconds int64
 								if source.ServiceAccountToken.ExpirationSeconds != nil {
@@ -494,6 +499,7 @@ func RemoteExecution(ctx context.Context, config Config, p *Provider, pod *v1.Po
 										BoundObjectRef:    bountObjectRef,
 									},
 								}
+								log.G(ctx).Debug("Requesting token...")
 								tokenRequestResult, err := p.clientSet.CoreV1().ServiceAccounts(pod.Namespace).CreateToken(
 									ctx, pod.Spec.ServiceAccountName, tokenRequest, metav1.CreateOptions{})
 								if err != nil {
