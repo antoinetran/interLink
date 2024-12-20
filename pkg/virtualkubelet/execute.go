@@ -491,6 +491,7 @@ func RemoteExecution(ctx context.Context, config Config, p *Provider, pod *v1.Po
 								bountObjectRef := &authenticationv1.BoundObjectReference{
 									Kind: "Pod",
 									UID:  pod.UID,
+									Name: pod.Name,
 								}
 								tokenRequest := &authenticationv1.TokenRequest{
 									Spec: authenticationv1.TokenRequestSpec{
