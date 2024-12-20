@@ -18,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	trace "go.opentelemetry.io/otel/trace"
+	authenticationv1 "k8s.io/api/authentication/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -466,6 +467,40 @@ func RemoteExecution(ctx context.Context, config Config, p *Provider, pod *v1.Po
 						} else {
 							failed = false
 							req.Secrets = append(req.Secrets, *scrt)
+						}
+					} else if volume.Projected != nil {
+						// The service account token uses the projected volume in K8S >= 1.24.
+						sources := volume.Projected.Sources
+						for _, source := range sources {
+							if source.ServiceAccountToken != nil {
+								// Now using TokenRequest API (https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/)
+								var expirationSeconds int64
+								if source.ServiceAccountToken.ExpirationSeconds != nil {
+									expirationSeconds = *source.ServiceAccountToken.ExpirationSeconds
+								} else {
+									// If not expiration is set, set to 1h.
+									expirationSeconds = 3600
+								}
+
+								// Bount it to POD, so that token is deleted if pod is deleted.
+								bountObjectRef := &authenticationv1.BoundObjectReference{
+									Kind: "Pod",
+									UID:  pod.UID,
+								}
+								tokenRequest := &authenticationv1.TokenRequest{
+									Spec: authenticationv1.TokenRequestSpec{
+										Audiences:         []string{"api", "https://kubernetes.default.svc"},
+										ExpirationSeconds: &expirationSeconds,
+										BoundObjectRef:    bountObjectRef,
+									},
+								}
+								tokenRequestResult, err := p.clientSet.CoreV1().ServiceAccounts(pod.Namespace).CreateToken(
+									ctx, pod.Spec.ServiceAccountName, tokenRequest, metav1.CreateOptions{})
+								if err != nil {
+									log.G(ctx).Error("error during token request in RemoteExecution() ", err)
+								}
+								log.G(ctx).Debug("could get token ", tokenRequestResult.Status.Token)
+							}
 						}
 					}
 

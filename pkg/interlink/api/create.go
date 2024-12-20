@@ -67,22 +67,6 @@ func (h *InterLinkHandler) CreateHandler(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	log.G(h.Ctx).Debug("pod struct bytes", string(bodyBytes))
-	for _, secret := range pod.Secrets {
-		log.G(h.Ctx).Debug("pod struct secret: ", secret.String(), " name: ", secret.Name, " type: ", secret.Type)
-	}
-	for _, volume := range pod.Pod.Spec.Volumes {
-		log.G(h.Ctx).Debug("pod struct volume: ", volume.String(), " name: ", volume.Name)
-		log.G(h.Ctx).Debug("pod struct volume type: ", volume.DownwardAPI)
-		if volume.DownwardAPI != nil {
-			log.G(h.Ctx).Debug("pod struct volume type: ", volume.DownwardAPI.Items)
-			for _, item := range volume.DownwardAPI.Items {
-				log.G(h.Ctx).Debug("pod struct volume type: ", item)
-			}
-		}
-	}
-	log.G(h.Ctx).Debug("END OF PODDDDDDDD DEBUG")
-
 	retrievedData = append(retrievedData, data)
 
 	if retrievedData != nil {
