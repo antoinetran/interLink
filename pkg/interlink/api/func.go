@@ -90,6 +90,29 @@ func retrieveData(ctx context.Context, config types.Config, pod types.PodCreateR
 							break
 						}
 					}
+					// This should not happen, error. Building error context.
+					var configMapsKeys []string
+					for _, cfgMap := range pod.ConfigMaps {
+						configMapsKeys = append(configMapsKeys, cfgMap.Name)
+					}
+					log.G(ctx).Errorf("could not find in retrievedData the matching object for pod %s container %s volume %s configMap %s retrievedData keys %s",
+						pod.Pod.Name, container.Name, vol.Name, vol.ConfigMap.Name, configMapsKeys)
+
+				case vol.Projected != nil:
+					log.G(ctx).Info("--- Retrieving ProjectedVolume ", vol.Name)
+					for _, projectedVolumeMap := range pod.ProjectedVolumeMaps {
+						if projectedVolumeMap.Name == vol.Name {
+							retrievedData.ProjectedVolumeMaps = append(retrievedData.ProjectedVolumeMaps, projectedVolumeMap)
+							break
+						}
+					}
+					// This should not happen, error. Building error context.
+					var projectedVolumeMapsKeys []string
+					for _, projectedVolumeMap := range pod.ProjectedVolumeMaps {
+						projectedVolumeMapsKeys = append(projectedVolumeMapsKeys, projectedVolumeMap.Name)
+					}
+					log.G(ctx).Errorf("could not find in retrievedData the matching object for pod %s container %s volume %s projectedVolumeMap %s retrievedData keys %s",
+						pod.Pod.Name, container.Name, vol.Name, vol.ConfigMap.Name, projectedVolumeMapsKeys)
 
 				case vol.Secret != nil:
 					log.G(ctx).Info("--- Retrieving Secret ", vol.Secret.SecretName)
@@ -99,19 +122,17 @@ func retrieveData(ctx context.Context, config types.Config, pod types.PodCreateR
 							break
 						}
 					}
+					// This should not happen, error. Building error context.
+					var secretKeys []string
+					for _, secret := range pod.Secrets {
+						secretKeys = append(secretKeys, secret.Name)
+					}
+					log.G(ctx).Errorf("could not find in retrievedData the matching object for pod %s container %s volume %s secret %s retrievedData keys %s",
+						pod.Pod.Name, container.Name, vol.Name, vol.ConfigMap.Name, secretKeys)
 
 				case vol.EmptyDir != nil:
 					edPath := filepath.Join(config.DataRootFolder, pod.Pod.Namespace+"-"+string(pod.Pod.UID), "emptyDirs", vol.Name)
 					retrievedData.EmptyDirs = append(retrievedData.EmptyDirs, edPath)
-
-				case vol.Projected != nil:
-					log.G(ctx).Info("--- Retrieving ProjectedVolume ", vol.Name)
-					for _, ProjectedVolumeMap := range pod.ProjectedVolumeMaps {
-						if ProjectedVolumeMap.Name == vol.Name {
-							retrievedData.ProjectedVolumeMaps = append(retrievedData.ProjectedVolumeMaps, ProjectedVolumeMap)
-							break
-						}
-					}
 
 				default:
 					log.G(ctx).Warning("Unsupported volume type for ", mountVar.Name)
