@@ -421,6 +421,7 @@ func remoteExecutionHandleProjectedSource(
 ) error {
 	var projectedVolume v1.ConfigMap
 	projectedVolume.Name = volName
+	projectedVolume.Data = make(map[string]string)
 	req.ProjectedVolumeMaps = append(req.ProjectedVolumeMaps, projectedVolume)
 	//projectedVolume.Name =
 	switch {
@@ -609,6 +610,10 @@ func RemoteExecution(ctx context.Context, config Config, p *Provider, pod *v1.Po
 						} else {
 							req.Secrets = append(req.Secrets, *scrt)
 						}
+
+					case volume.EmptyDir != nil:
+						log.G(ctx).Debugf("empty dir found, nothing to do for volume %s for Pod %s", volume.Name, pod.Name)
+
 					default:
 						log.G(ctx).Warningf("ignoring unsupported volume %s for Pod %s", volume.Name, pod.Name)
 					}
