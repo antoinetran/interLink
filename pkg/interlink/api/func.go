@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -96,7 +97,7 @@ func retrieveData(ctx context.Context, config types.Config, pod types.PodCreateR
 						configMapsKeys = append(configMapsKeys, cfgMap.Name)
 					}
 					log.G(ctx).Errorf("could not find in retrievedData the matching object for pod %s container %s volume %s configMap %s retrievedData keys %s",
-						pod.Pod.Name, container.Name, vol.Name, vol.ConfigMap.Name, configMapsKeys)
+						pod.Pod.Name, container.Name, vol.Name, vol.ConfigMap.Name, strings.Join(configMapsKeys, ","))
 
 				case vol.Projected != nil:
 					log.G(ctx).Info("--- Retrieving ProjectedVolume ", vol.Name)
@@ -112,7 +113,7 @@ func retrieveData(ctx context.Context, config types.Config, pod types.PodCreateR
 						projectedVolumeMapsKeys = append(projectedVolumeMapsKeys, projectedVolumeMap.Name)
 					}
 					log.G(ctx).Errorf("could not find in retrievedData the matching object for pod %s container %s volume %s projectedVolumeMap %s retrievedData keys %s",
-						pod.Pod.Name, container.Name, vol.Name, vol.ConfigMap.Name, projectedVolumeMapsKeys)
+						pod.Pod.Name, container.Name, vol.Name, vol.ConfigMap.Name, strings.Join(projectedVolumeMapsKeys, ","))
 
 				case vol.Secret != nil:
 					log.G(ctx).Info("--- Retrieving Secret ", vol.Secret.SecretName)
@@ -128,7 +129,7 @@ func retrieveData(ctx context.Context, config types.Config, pod types.PodCreateR
 						secretKeys = append(secretKeys, secret.Name)
 					}
 					log.G(ctx).Errorf("could not find in retrievedData the matching object for pod %s container %s volume %s secret %s retrievedData keys %s",
-						pod.Pod.Name, container.Name, vol.Name, vol.ConfigMap.Name, secretKeys)
+						pod.Pod.Name, container.Name, vol.Name, vol.ConfigMap.Name, strings.Join(secretKeys, ","))
 
 				case vol.EmptyDir != nil:
 					edPath := filepath.Join(config.DataRootFolder, pod.Pod.Namespace+"-"+string(pod.Pod.UID), "emptyDirs", vol.Name)
