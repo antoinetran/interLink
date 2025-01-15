@@ -112,8 +112,8 @@ func retrieveData(ctx context.Context, config types.Config, pod types.PodCreateR
 					for _, projectedVolumeMap := range pod.ProjectedVolumeMaps {
 						projectedVolumeMapsKeys = append(projectedVolumeMapsKeys, projectedVolumeMap.Name)
 					}
-					log.G(ctx).Errorf("could not find in retrievedData the matching object for pod %s container %s volume %s projectedVolumeMap %s retrievedData keys %s",
-						pod.Pod.Name, container.Name, vol.Name, vol.ConfigMap.Name, strings.Join(projectedVolumeMapsKeys, ","))
+					log.G(ctx).Errorf("could not find in retrievedData the matching object for pod %s container %s volume %s projectedVolumeMap retrievedData keys %s",
+						pod.Pod.Name, container.Name, vol.Name, strings.Join(projectedVolumeMapsKeys, ","))
 
 				case vol.Secret != nil:
 					log.G(ctx).Info("--- Retrieving Secret ", vol.Secret.SecretName)
@@ -129,7 +129,7 @@ func retrieveData(ctx context.Context, config types.Config, pod types.PodCreateR
 						secretKeys = append(secretKeys, secret.Name)
 					}
 					log.G(ctx).Errorf("could not find in retrievedData the matching object for pod %s container %s volume %s secret %s retrievedData keys %s",
-						pod.Pod.Name, container.Name, vol.Name, vol.ConfigMap.Name, strings.Join(secretKeys, ","))
+						pod.Pod.Name, container.Name, vol.Name, vol.Secret.SecretName, strings.Join(secretKeys, ","))
 
 				case vol.EmptyDir != nil:
 					edPath := filepath.Join(config.DataRootFolder, pod.Pod.Namespace+"-"+string(pod.Pod.UID), "emptyDirs", vol.Name)

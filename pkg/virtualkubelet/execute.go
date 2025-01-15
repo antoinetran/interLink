@@ -422,6 +422,7 @@ func remoteExecutionHandleProjectedSource(
 	var projectedVolume v1.ConfigMap
 	projectedVolume.Name = volName
 	projectedVolume.Data = make(map[string]string)
+	log.G(ctx).Debug("Adding to PodCreateRequests the projected volume ", volName)
 	req.ProjectedVolumeMaps = append(req.ProjectedVolumeMaps, projectedVolume)
 	//projectedVolume.Name =
 	switch {
@@ -598,6 +599,7 @@ func RemoteExecution(ctx context.Context, config Config, p *Provider, pod *v1.Po
 							} else {
 								failedAndWait = false
 							}
+							log.G(ctx).Debug("ProjectedVolumeMaps len: ", len(req.ProjectedVolumeMaps))
 						}
 
 					case volume.Secret != nil:
