@@ -102,7 +102,10 @@ func retrieveData(ctx context.Context, config types.Config, pod types.PodCreateR
 				case vol.Projected != nil:
 					log.G(ctx).Info("--- Retrieving ProjectedVolume ", vol.Name)
 					for _, projectedVolumeMap := range pod.ProjectedVolumeMaps {
+						log.G(ctx).Debug("Comparing projectedVolumeMap.Name: ", projectedVolumeMap.Name, " with vol.Name: ", vol.Name)
 						if projectedVolumeMap.Name == vol.Name {
+							log.G(ctx).Debug("projectedVolumeMap found! Name: ", projectedVolumeMap.Name)
+
 							retrievedData.ProjectedVolumeMaps = append(retrievedData.ProjectedVolumeMaps, projectedVolumeMap)
 							break
 						}

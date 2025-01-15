@@ -417,13 +417,8 @@ func LogRetrieval(
 }
 
 func remoteExecutionHandleProjectedSource(
-	ctx context.Context, p *Provider, pod *v1.Pod, source v1.VolumeProjection, req *types.PodCreateRequests, volName string,
+	ctx context.Context, p *Provider, pod *v1.Pod, source v1.VolumeProjection, projectedVolume *v1.ConfigMap,
 ) error {
-	var projectedVolume v1.ConfigMap
-	projectedVolume.Name = volName
-	projectedVolume.Data = make(map[string]string)
-	log.G(ctx).Debug("Adding to PodCreateRequests the projected volume ", volName)
-	req.ProjectedVolumeMaps = append(req.ProjectedVolumeMaps, projectedVolume)
 	//projectedVolume.Name =
 	switch {
 	case source.ServiceAccountToken != nil:
@@ -592,8 +587,14 @@ func RemoteExecution(ctx context.Context, config Config, p *Provider, pod *v1.Po
 					case volume.Projected != nil:
 						// The service account token uses the projected volume in K8S >= 1.24.
 
+						var projectedVolume v1.ConfigMap
+						projectedVolume.Name = volume.Name
+						projectedVolume.Data = make(map[string]string)
+						log.G(ctx).Debug("Adding to PodCreateRequests the projected volume ", volume.Name)
+						req.ProjectedVolumeMaps = append(req.ProjectedVolumeMaps, projectedVolume)
+
 						for _, source := range volume.Projected.Sources {
-							err := remoteExecutionHandleProjectedSource(ctx, p, pod, source, &req, volume.Name)
+							err := remoteExecutionHandleProjectedSource(ctx, p, pod, source, &projectedVolume)
 							if err != nil {
 								return err
 							} else {
