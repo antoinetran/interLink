@@ -36,10 +36,10 @@ func getData(ctx context.Context, config types.Config, pod types.PodCreateReques
 		startContainer := time.Now().UnixMicro()
 		log.G(ctx).Info("- Retrieving Secrets and ConfigMaps for the Docker Sidecar. InitContainer: " + container.Name)
 		log.G(ctx).Debug(container.VolumeMounts)
-		data, InterlinkIP := retrieveData(ctx, config, pod, container)
-		if InterlinkIP != nil {
-			log.G(ctx).Error(InterlinkIP)
-			return types.RetrievedPodData{}, InterlinkIP
+		data, err := retrieveData(ctx, config, pod, container)
+		if err != nil {
+			log.G(ctx).Error(err)
+			return types.RetrievedPodData{}, err
 		}
 		retrievedData.Containers = append(retrievedData.Containers, data)
 
@@ -80,6 +80,7 @@ func retrieveData(ctx context.Context, config types.Config, pod types.PodCreateR
 	for _, mountVar := range container.VolumeMounts {
 		log.G(ctx).Debug("-- Retrieving data for mountpoint ", mountVar.Name)
 
+	loopVolumes:
 		for _, vol := range pod.Pod.Spec.Volumes {
 			if vol.Name == mountVar.Name {
 				switch {
@@ -87,8 +88,9 @@ func retrieveData(ctx context.Context, config types.Config, pod types.PodCreateR
 					log.G(ctx).Info("--- Retrieving ConfigMap ", vol.ConfigMap.Name)
 					for _, cfgMap := range pod.ConfigMaps {
 						if cfgMap.Name == vol.ConfigMap.Name {
+							log.G(ctx).Debug("configMap found! Name: ", cfgMap.Name)
 							retrievedData.ConfigMaps = append(retrievedData.ConfigMaps, cfgMap)
-							break
+							break loopVolumes
 						}
 					}
 					// This should not happen, error. Building error context.
@@ -96,8 +98,8 @@ func retrieveData(ctx context.Context, config types.Config, pod types.PodCreateR
 					for _, cfgMap := range pod.ConfigMaps {
 						configMapsKeys = append(configMapsKeys, cfgMap.Name)
 					}
-					log.G(ctx).Errorf("could not find in retrievedData the matching object for pod %s container %s volume %s configMap %s retrievedData keys %s",
-						pod.Pod.Name, container.Name, vol.Name, vol.ConfigMap.Name, strings.Join(configMapsKeys, ","))
+					log.G(ctx).Errorf("could not find in retrievedData the matching object for volume: %s (pod: %s container: %s configMap: %s) retrievedData keys: %s", vol.Name,
+						pod.Pod.Name, container.Name, vol.ConfigMap.Name, strings.Join(configMapsKeys, ","))
 
 				case vol.Projected != nil:
 					log.G(ctx).Info("--- Retrieving ProjectedVolume ", vol.Name)
@@ -107,7 +109,7 @@ func retrieveData(ctx context.Context, config types.Config, pod types.PodCreateR
 							log.G(ctx).Debug("projectedVolumeMap found! Name: ", projectedVolumeMap.Name)
 
 							retrievedData.ProjectedVolumeMaps = append(retrievedData.ProjectedVolumeMaps, projectedVolumeMap)
-							break
+							break loopVolumes
 						}
 					}
 					// This should not happen, error. Building error context.
@@ -115,15 +117,16 @@ func retrieveData(ctx context.Context, config types.Config, pod types.PodCreateR
 					for _, projectedVolumeMap := range pod.ProjectedVolumeMaps {
 						projectedVolumeMapsKeys = append(projectedVolumeMapsKeys, projectedVolumeMap.Name)
 					}
-					log.G(ctx).Errorf("could not find in retrievedData the matching object for pod %s container %s volume %s projectedVolumeMap retrievedData keys %s",
-						pod.Pod.Name, container.Name, vol.Name, strings.Join(projectedVolumeMapsKeys, ","))
+					log.G(ctx).Errorf("could not find in retrievedData the matching object for  volume: %s (pod: %s container: %s projectedVolumeMap) retrievedData keys: %s",
+						vol.Name, pod.Pod.Name, container.Name, strings.Join(projectedVolumeMapsKeys, ","))
 
 				case vol.Secret != nil:
 					log.G(ctx).Info("--- Retrieving Secret ", vol.Secret.SecretName)
 					for _, secret := range pod.Secrets {
 						if secret.Name == vol.Secret.SecretName {
+							log.G(ctx).Debug("secret found! Name: ", secret.Name)
 							retrievedData.Secrets = append(retrievedData.Secrets, secret)
-							break
+							break loopVolumes
 						}
 					}
 					// This should not happen, error. Building error context.
@@ -131,7 +134,7 @@ func retrieveData(ctx context.Context, config types.Config, pod types.PodCreateR
 					for _, secret := range pod.Secrets {
 						secretKeys = append(secretKeys, secret.Name)
 					}
-					log.G(ctx).Errorf("could not find in retrievedData the matching object for pod %s container %s volume %s secret %s retrievedData keys %s",
+					log.G(ctx).Errorf("could not find in retrievedData the matching object for volume: %s (pod: %s container: %s secret: %s) retrievedData keys: %s",
 						pod.Pod.Name, container.Name, vol.Name, vol.Secret.SecretName, strings.Join(secretKeys, ","))
 
 				case vol.EmptyDir != nil:
