@@ -555,7 +555,9 @@ func addKubernetesServicesEnvVars(ctx context.Context, config Config, pod *v1.Po
 		log.G(ctx).Info("InterLink configuration does not contains both KubernetesApiAddr and KubernetesApiPort, so no env var like KUBERNETES_SERVICE_HOST is added.")
 		return
 	}
-	for _, container := range pod.Spec.Containers {
+	allContainers := pod.Spec.InitContainers
+	allContainers = append(allContainers, pod.Spec.Containers...)
+	for _, container := range allContainers {
 		envsPtr := &container.Env
 		appendEnvVar(envsPtr, "KUBERNETES_PORT", "tcp://"+config.KubernetesApiAddr+":"+config.KubernetesApiPort)
 		appendEnvVar(envsPtr, "KUBERNETES_SERVICE_PORT", config.KubernetesApiPort)
@@ -565,6 +567,11 @@ func addKubernetesServicesEnvVars(ctx context.Context, config Config, pod *v1.Po
 		appendEnvVar(envsPtr, "KUBERNETES_PORT_443_TCP", "tcp://"+config.KubernetesApiAddr+":"+config.KubernetesApiPort)
 		appendEnvVar(envsPtr, "KUBERNETES_SERVICE_PORT_HTTPS", config.KubernetesApiPort)
 		appendEnvVar(envsPtr, "KUBERNETES_SERVICE_HOST", config.KubernetesApiAddr)
+
+		// For debugging purpose only.
+		for _, envVar := range container.Env {
+			log.G(ctx).Debug("InterLink VK environment variable to pod ", pod.Name, " container: ", container.Name, " env: ", envVar.Name, " value: ", envVar.Value)
+		}
 	}
 	log.G(ctx).Info("InterLink VK added a set of environment variables (e.g.: KUBERNETES_SERVICE_HOST) to all containers of pod ",
 		pod.Name, " k8s addr ", config.KubernetesApiAddr, " k8s port ", config.KubernetesApiPort)
