@@ -532,6 +532,139 @@ func remoteExecutionHandleProjectedSource(
 	return nil
 }
 
+// Adds to pod environment variables related to services. For now, it only concerns Kubernetes API variables, example below:
+/*
+KUBERNETES_PORT=tcp://10.96.0.1:443
+KUBERNETES_SERVICE_PORT=443
+KUBERNETES_PORT_443_TCP_ADDR=10.96.0.1
+KUBERNETES_PORT_443_TCP_PORT=443
+KUBERNETES_PORT_443_TCP_PROTO=tcp
+KUBERNETES_PORT_443_TCP=tcp://10.96.0.1:443
+KUBERNETES_SERVICE_PORT_HTTPS=443
+KUBERNETES_SERVICE_HOST=10.96.0.1
+*/
+func addKubernetesServicesEnvVars(ctx context.Context, config Config, pod *v1.Pod) {
+	appendEnvVar := func(envs *[]v1.EnvVar, name string, value string) {
+		envVar := v1.EnvVar{
+			Name:  name,
+			Value: value,
+		}
+		*envs = append(*envs, envVar)
+	}
+	if config.KubernetesApiAddr == "" || config.KubernetesApiPort == "" {
+		log.G(ctx).Info("InterLink configuration does not contains both KubernetesApiAddr and KubernetesApiPort, so no env var like KUBERNETES_SERVICE_HOST is added.")
+		return
+	}
+	for _, container := range pod.Spec.Containers {
+		envsPtr := &container.Env
+		appendEnvVar(envsPtr, "KUBERNETES_PORT", "tcp://"+config.KubernetesApiAddr+":"+config.KubernetesApiPort)
+		appendEnvVar(envsPtr, "KUBERNETES_SERVICE_PORT", config.KubernetesApiPort)
+		appendEnvVar(envsPtr, "KUBERNETES_PORT_443_TCP_ADDR", config.KubernetesApiAddr)
+		appendEnvVar(envsPtr, "KUBERNETES_PORT_443_TCP_PORT", config.KubernetesApiPort)
+		appendEnvVar(envsPtr, "KUBERNETES_PORT_443_TCP_PROTO", "tcp")
+		appendEnvVar(envsPtr, "KUBERNETES_PORT_443_TCP", "tcp://"+config.KubernetesApiAddr+":"+config.KubernetesApiPort)
+		appendEnvVar(envsPtr, "KUBERNETES_SERVICE_PORT_HTTPS", config.KubernetesApiPort)
+		appendEnvVar(envsPtr, "KUBERNETES_SERVICE_HOST", config.KubernetesApiAddr)
+	}
+	log.G(ctx).Info("InterLink VK added a set of environment variables (e.g.: KUBERNETES_SERVICE_HOST) to all containers of pod ",
+		pod.Name, " k8s addr ", config.KubernetesApiAddr, " k8s port ", config.KubernetesApiPort)
+}
+
+func remoteExecutionHandleVolumes(ctx context.Context, p *Provider, pod *v1.Pod, req *types.PodCreateRequests) error {
+	startTime := time.Now()
+
+	timeNow := time.Now()
+	_, err := p.clientSet.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
+	if err != nil {
+		log.G(ctx).Warning("Deleted Pod before actual creation")
+		return nil
+	}
+	// Sometime the get secret or configmap can fail because it didn't have time to initialize, thus this
+	// is not a true failure. We use this flag to wait.
+	var failedAndWait bool
+
+	log.G(ctx).Debug("Looking at volumes")
+	for _, volume := range pod.Spec.Volumes {
+		log.G(ctx).Debug("Looking at volume ", volume)
+		for {
+			failedAndWait = false
+			if timeNow.Sub(startTime).Seconds() < time.Hour.Minutes()*5 {
+				switch {
+				case volume.ConfigMap != nil:
+					cfgmap, err := p.clientSet.CoreV1().ConfigMaps(pod.Namespace).Get(ctx, volume.ConfigMap.Name, metav1.GetOptions{})
+					if err != nil {
+						err = failedMount(ctx, &failedAndWait, volume.ConfigMap.Name, pod, p)
+						if err != nil {
+							return err
+						}
+					} else {
+						req.ConfigMaps = append(req.ConfigMaps, *cfgmap)
+					}
+
+				case volume.Projected != nil:
+					// The service account token uses the projected volume in K8S >= 1.24.
+
+					var projectedVolume v1.ConfigMap
+					projectedVolume.Name = volume.Name
+					projectedVolume.Data = make(map[string]string)
+					log.G(ctx).Debug("Adding to PodCreateRequests the projected volume ", volume.Name)
+					req.ProjectedVolumeMaps = append(req.ProjectedVolumeMaps, projectedVolume)
+
+					for _, source := range volume.Projected.Sources {
+						err := remoteExecutionHandleProjectedSource(ctx, p, pod, source, &projectedVolume)
+						if err != nil {
+							return err
+						} else {
+							failedAndWait = false
+						}
+						log.G(ctx).Debug("ProjectedVolumeMaps len: ", len(req.ProjectedVolumeMaps))
+					}
+
+				case volume.Secret != nil:
+					scrt, err := p.clientSet.CoreV1().Secrets(pod.Namespace).Get(ctx, volume.Secret.SecretName, metav1.GetOptions{})
+					if err != nil {
+						err = failedMount(ctx, &failedAndWait, volume.Secret.SecretName, pod, p)
+						if err != nil {
+							return err
+						}
+					} else {
+						req.Secrets = append(req.Secrets, *scrt)
+					}
+
+				case volume.EmptyDir != nil:
+					log.G(ctx).Debugf("empty dir found, nothing to do for volume %s for Pod %s", volume.Name, pod.Name)
+
+				default:
+					log.G(ctx).Warningf("ignoring unsupported volume %s for Pod %s", volume.Name, pod.Name)
+				}
+
+				if failedAndWait {
+					time.Sleep(time.Second)
+					continue
+				}
+				pod.Status.Phase = v1.PodPending
+				err = p.UpdatePod(ctx, pod)
+				if err != nil {
+					return err
+				}
+				break
+			}
+
+			pod.Status.Phase = v1.PodFailed
+			pod.Status.Reason = "CFGMaps/Secrets not found"
+			for i := range pod.Status.ContainerStatuses {
+				pod.Status.ContainerStatuses[i].Ready = false
+			}
+			err = p.UpdatePod(ctx, pod)
+			if err != nil {
+				return err
+			}
+			return errors.New("unable to retrieve ConfigMaps or Secrets. Check logs")
+		}
+	}
+	return nil
+}
+
 // RemoteExecution is called by the VK everytime a Pod is being registered or deleted to/from the VK.
 // Depending on the mode (CREATE/DELETE), it performs different actions, making different REST calls.
 // Note: for the CREATE mode, the function gets stuck up to 5 minutes waiting for every missing ConfigMap/Secret.
@@ -553,98 +686,14 @@ func RemoteExecution(ctx context.Context, config Config, p *Provider, pod *v1.Po
 		var resp types.CreateStruct
 
 		req.Pod = *pod
-		startTime := time.Now()
 
-		timeNow := time.Now()
-		_, err := p.clientSet.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
+		err := remoteExecutionHandleVolumes(ctx, p, pod, &req)
 		if err != nil {
-			log.G(ctx).Warning("Deleted Pod before actual creation")
-			return nil
+			return err
 		}
 
-		// Sometime the get secret or configmap can fail because it didn't have time to initialize, thus this
-		// is not a true failure. We use this flag to wait.
-		var failedAndWait bool
-
-		log.G(ctx).Debug("Looking at volumes")
-		for _, volume := range pod.Spec.Volumes {
-			log.G(ctx).Debug("Looking at volume ", volume)
-			for {
-				failedAndWait = false
-				if timeNow.Sub(startTime).Seconds() < time.Hour.Minutes()*5 {
-					switch {
-					case volume.ConfigMap != nil:
-						cfgmap, err := p.clientSet.CoreV1().ConfigMaps(pod.Namespace).Get(ctx, volume.ConfigMap.Name, metav1.GetOptions{})
-						if err != nil {
-							err = failedMount(ctx, &failedAndWait, volume.ConfigMap.Name, pod, p)
-							if err != nil {
-								return err
-							}
-						} else {
-							req.ConfigMaps = append(req.ConfigMaps, *cfgmap)
-						}
-
-					case volume.Projected != nil:
-						// The service account token uses the projected volume in K8S >= 1.24.
-
-						var projectedVolume v1.ConfigMap
-						projectedVolume.Name = volume.Name
-						projectedVolume.Data = make(map[string]string)
-						log.G(ctx).Debug("Adding to PodCreateRequests the projected volume ", volume.Name)
-						req.ProjectedVolumeMaps = append(req.ProjectedVolumeMaps, projectedVolume)
-
-						for _, source := range volume.Projected.Sources {
-							err := remoteExecutionHandleProjectedSource(ctx, p, pod, source, &projectedVolume)
-							if err != nil {
-								return err
-							} else {
-								failedAndWait = false
-							}
-							log.G(ctx).Debug("ProjectedVolumeMaps len: ", len(req.ProjectedVolumeMaps))
-						}
-
-					case volume.Secret != nil:
-						scrt, err := p.clientSet.CoreV1().Secrets(pod.Namespace).Get(ctx, volume.Secret.SecretName, metav1.GetOptions{})
-						if err != nil {
-							err = failedMount(ctx, &failedAndWait, volume.Secret.SecretName, pod, p)
-							if err != nil {
-								return err
-							}
-						} else {
-							req.Secrets = append(req.Secrets, *scrt)
-						}
-
-					case volume.EmptyDir != nil:
-						log.G(ctx).Debugf("empty dir found, nothing to do for volume %s for Pod %s", volume.Name, pod.Name)
-
-					default:
-						log.G(ctx).Warningf("ignoring unsupported volume %s for Pod %s", volume.Name, pod.Name)
-					}
-
-					if failedAndWait {
-						time.Sleep(time.Second)
-						continue
-					}
-					pod.Status.Phase = v1.PodPending
-					err = p.UpdatePod(ctx, pod)
-					if err != nil {
-						return err
-					}
-					break
-				}
-
-				pod.Status.Phase = v1.PodFailed
-				pod.Status.Reason = "CFGMaps/Secrets not found"
-				for i := range pod.Status.ContainerStatuses {
-					pod.Status.ContainerStatuses[i].Ready = false
-				}
-				err = p.UpdatePod(ctx, pod)
-				if err != nil {
-					return err
-				}
-				return errors.New("unable to retrieve ConfigMaps or Secrets. Check logs")
-			}
-		}
+		// Adds special Kubernetes env var. Note: the pod provided by VK is "immutable", well it is a copy. In InterLink, we can modify it.
+		addKubernetesServicesEnvVars(ctx, config, pod)
 
 		returnVal, err := createRequest(ctx, config, req, token)
 		if err != nil {
