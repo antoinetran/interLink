@@ -551,13 +551,7 @@ func addKubernetesServicesEnvVars(ctx context.Context, config Config, pod *v1.Po
 		}
 		*envs = append(*envs, envVar)
 	}
-	if config.KubernetesApiAddr == "" || config.KubernetesApiPort == "" {
-		log.G(ctx).Info("InterLink configuration does not contains both KubernetesApiAddr and KubernetesApiPort, so no env var like KUBERNETES_SERVICE_HOST is added.")
-		return
-	}
-	allContainers := pod.Spec.InitContainers
-	allContainers = append(allContainers, pod.Spec.Containers...)
-	for _, container := range allContainers {
+	appendEnvVars := func(container *v1.Container) {
 		envsPtr := &container.Env
 		appendEnvVar(envsPtr, "KUBERNETES_PORT", "tcp://"+config.KubernetesApiAddr+":"+config.KubernetesApiPort)
 		appendEnvVar(envsPtr, "KUBERNETES_SERVICE_PORT", config.KubernetesApiPort)
@@ -567,11 +561,16 @@ func addKubernetesServicesEnvVars(ctx context.Context, config Config, pod *v1.Po
 		appendEnvVar(envsPtr, "KUBERNETES_PORT_443_TCP", "tcp://"+config.KubernetesApiAddr+":"+config.KubernetesApiPort)
 		appendEnvVar(envsPtr, "KUBERNETES_SERVICE_PORT_HTTPS", config.KubernetesApiPort)
 		appendEnvVar(envsPtr, "KUBERNETES_SERVICE_HOST", config.KubernetesApiAddr)
-
-		// For debugging purpose only.
-		for _, envVar := range container.Env {
-			log.G(ctx).Debug("InterLink VK environment variable to pod ", pod.Name, " container: ", container.Name, " env: ", envVar.Name, " value: ", envVar.Value)
-		}
+	}
+	if config.KubernetesApiAddr == "" || config.KubernetesApiPort == "" {
+		log.G(ctx).Info("InterLink configuration does not contains both KubernetesApiAddr and KubernetesApiPort, so no env var like KUBERNETES_SERVICE_HOST is added.")
+		return
+	}
+	for _, container := range pod.Spec.InitContainers {
+		appendEnvVars(&container)
+	}
+	for _, container := range pod.Spec.Containers {
+		appendEnvVars(&container)
 	}
 	log.G(ctx).Info("InterLink VK added a set of environment variables (e.g.: KUBERNETES_SERVICE_HOST) to all containers of pod ",
 		pod.Name, " k8s addr ", config.KubernetesApiAddr, " k8s port ", config.KubernetesApiPort)
@@ -702,6 +701,17 @@ func RemoteExecution(ctx context.Context, config Config, p *Provider, pod *v1.Po
 		// Adds special Kubernetes env var. Note: the pod provided by VK is "immutable", well it is a copy. In InterLink, we can modify it.
 		addKubernetesServicesEnvVars(ctx, config, pod)
 
+		// For debugging purpose only.
+		for _, container := range pod.Spec.InitContainers {
+			for _, envVar := range container.Env {
+				log.G(ctx).Debug("InterLink VK environment variable to pod ", pod.Name, " container: ", container.Name, " env: ", envVar.Name, " value: ", envVar.Value)
+			}
+		}
+		for _, container := range pod.Spec.Containers {
+			for _, envVar := range container.Env {
+				log.G(ctx).Debug("InterLink VK environment variable to pod ", pod.Name, " container: ", container.Name, " env: ", envVar.Name, " value: ", envVar.Value)
+			}
+		}
 		returnVal, err := createRequest(ctx, config, req, token)
 		if err != nil {
 			return fmt.Errorf("error doing createRequest() in RemoteExecution() return value %s error detail %s error: %w", returnVal, fmt.Sprintf("%#v", err), err)
