@@ -553,8 +553,10 @@ func addKubernetesServicesEnvVars(ctx context.Context, config Config, pod *v1.Po
 		*envs = append(*envs, envVar)
 		log.G(ctx).Debug("in addKubernetesServicesEnvVars in appendEnvVar after add env: len(envs): ", len(*envs))
 	}
-	appendEnvVars := func(container *v1.Container) {
-		envsPtr := &container.Env
+	appendEnvVars := func(containersPtr *[]v1.Container, index int) {
+		containers := *containersPtr
+		container := containers[index]
+		envsPtr := &containers[index].Env
 
 		log.G(ctx).Debug("in addKubernetesServicesEnvVars in appendEnvVars before add env: len(container.Env): ", len(container.Env))
 		appendEnvVar(envsPtr, "KUBERNETES_PORT", "tcp://"+config.KubernetesApiAddr+":"+config.KubernetesApiPort)
@@ -573,12 +575,12 @@ func addKubernetesServicesEnvVars(ctx context.Context, config Config, pod *v1.Po
 	}
 	// Warning: loop range copy value, so to modify containers, we must use index instead.
 	for i, _ := range pod.Spec.InitContainers {
-		container := pod.Spec.InitContainers[i]
-		appendEnvVars(&container)
+		log.G(ctx).Debug("in addKubernetesServicesEnvVars in loop init before add env: len(container.Env): ", len(pod.Spec.InitContainers[i].Env))
+		appendEnvVars(&pod.Spec.InitContainers, i)
+		log.G(ctx).Debug("in addKubernetesServicesEnvVars in loop init after add env: len(container.Env): ", len(pod.Spec.InitContainers[i].Env))
 	}
 	for i, _ := range pod.Spec.Containers {
-		container := pod.Spec.Containers[i]
-		appendEnvVars(&container)
+		appendEnvVars(&pod.Spec.Containers, i)
 	}
 
 	// For debugging purpose only.
