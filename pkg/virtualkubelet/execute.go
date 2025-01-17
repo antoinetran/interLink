@@ -571,10 +571,13 @@ func addKubernetesServicesEnvVars(ctx context.Context, config Config, pod *v1.Po
 		log.G(ctx).Info("InterLink configuration does not contains both KubernetesApiAddr and KubernetesApiPort, so no env var like KUBERNETES_SERVICE_HOST is added.")
 		return
 	}
-	for _, container := range pod.Spec.InitContainers {
+	// Warning: loop range copy value, so to modify containers, we must use index instead.
+	for i, _ := range pod.Spec.InitContainers {
+		container := pod.Spec.InitContainers[i]
 		appendEnvVars(&container)
 	}
-	for _, container := range pod.Spec.Containers {
+	for i, _ := range pod.Spec.Containers {
+		container := pod.Spec.InitContainers[i]
 		appendEnvVars(&container)
 	}
 
