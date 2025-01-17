@@ -577,7 +577,7 @@ func addKubernetesServicesEnvVars(ctx context.Context, config Config, pod *v1.Po
 		appendEnvVars(&container)
 	}
 	for i, _ := range pod.Spec.Containers {
-		container := pod.Spec.InitContainers[i]
+		container := pod.Spec.Containers[i]
 		appendEnvVars(&container)
 	}
 
