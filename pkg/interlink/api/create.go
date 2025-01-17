@@ -64,6 +64,16 @@ func (h *InterLinkHandler) CreateHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// For debugging purpose only.
+	allContainers := pod.Pod.Spec.InitContainers
+	allContainers = append(allContainers, pod.Pod.Spec.Containers...)
+	// For debugging purpose only.
+	for _, container := range allContainers {
+		for _, envVar := range container.Env {
+			log.G(h.Ctx).Debug("InterLink VK environment variable to pod ", pod.Pod.Name, " container: ", container.Name, " env: ", envVar.Name, " value: ", envVar.Value)
+		}
+	}
+
 	retrievedData = append(retrievedData, data)
 
 	if retrievedData != nil {
