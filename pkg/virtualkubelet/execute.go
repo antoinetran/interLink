@@ -476,14 +476,22 @@ func remoteExecutionHandleProjectedSource(
 		       name: kube-root-ca.crt
 		*/
 		for _, item := range source.ConfigMap.Items {
-			cfgmap, err := p.clientSet.CoreV1().ConfigMaps(pod.Namespace).Get(ctx, source.ConfigMap.Name, metav1.GetOptions{})
-			if err != nil {
-				return fmt.Errorf("error during retrieval of ConfigMap %s error: %w", source.ConfigMap.Name, err)
-			}
-			if value, ok := cfgmap.Data[item.Key]; ok {
-				projectedVolume.Data[item.Path] = value
+			KUBE_CA_CRT := "kube-root-ca.crt"
+			overrideCaCrt := p.config.KubernetesApiCaCrt
+			if source.ConfigMap.Name == KUBE_CA_CRT && overrideCaCrt != "" {
+				log.G(ctx).Debug("handling special case of Kubernetes API kube-root-ca.crt, override found, using provided ca.crt:, ", overrideCaCrt)
+				projectedVolume.Data[item.Path] = overrideCaCrt
 			} else {
-				return fmt.Errorf("error during retrieval of key %s of (existing) ConfigMap %s error: %w", item.Key, source.ConfigMap.Name, err)
+				log.G(ctx).Warning("using default Kubernetes API kube-root-ca.crt (no override found), but the default one might not be compatible with the subject: ", p.config.KubernetesApiAddr)
+				cfgmap, err := p.clientSet.CoreV1().ConfigMaps(pod.Namespace).Get(ctx, source.ConfigMap.Name, metav1.GetOptions{})
+				if err != nil {
+					return fmt.Errorf("error during retrieval of ConfigMap %s error: %w", source.ConfigMap.Name, err)
+				}
+				if value, ok := cfgmap.Data[item.Key]; ok {
+					projectedVolume.Data[item.Path] = value
+				} else {
+					return fmt.Errorf("error during retrieval of key %s of (existing) ConfigMap %s error: %w", item.Key, source.ConfigMap.Name, err)
+				}
 			}
 		}
 

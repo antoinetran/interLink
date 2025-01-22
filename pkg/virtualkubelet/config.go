@@ -5,7 +5,8 @@ type Config struct {
 	InterlinkURL      string `yaml:"InterlinkURL"`
 	Interlinkport     string `yaml:"InterlinkPort"`
 	KubernetesApiAddr string `yaml:"KubernetesApiAddr"`
-	KubernetesApiPort string `yaml:"KubernetesApiPort"`
+    KubernetesApiPort string `yaml:"KubernetesApiPort"`
+    KubernetesApiCaCrt string `yaml:"KubernetesApiCaCrt"`
 	VKConfigPath      string `yaml:"VKConfigPath"`
 	VKTokenFile       string `yaml:"VKTokenFile"`
 	ServiceAccount    string `yaml:"ServiceAccount"`
