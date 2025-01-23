@@ -454,12 +454,18 @@ func remoteExecutionHandleProjectedSource(
 		// "Unauthorized" "couldn't get current server API group list: the server has asked for the client to provide credentials"
 		tokenRequest := &authenticationv1.TokenRequest{
 			Spec: authenticationv1.TokenRequestSpec{
-				Audiences:         []string{"https://kubernetes.default.svc", p.config.KubernetesApiAddr},
+				Audiences: []string{
+					"https://kubernetes.default.svc",
+					p.config.KubernetesApiAddr,
+					p.config.KubernetesApiAddr + ":" + p.config.KubernetesApiPort,
+					"https://" + p.config.KubernetesApiAddr,
+					"https://" + p.config.KubernetesApiAddr + ":" + p.config.KubernetesApiPort,
+				},
 				ExpirationSeconds: &expirationSeconds,
 				BoundObjectRef:    bountObjectRef,
 			},
 		}
-		log.G(ctx).Debug("Requesting token...")
+		log.G(ctx).Debug("Requesting token... token audience: https://kubernetes.default.svc and ", p.config.KubernetesApiAddr)
 		tokenRequestResult, err := p.clientSet.CoreV1().ServiceAccounts(pod.Namespace).CreateToken(
 			ctx, pod.Spec.ServiceAccountName, tokenRequest, metav1.CreateOptions{})
 		if err != nil {
