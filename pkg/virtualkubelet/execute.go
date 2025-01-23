@@ -449,9 +449,12 @@ func remoteExecutionHandleProjectedSource(
 			UID:  pod.UID,
 			Name: pod.Name,
 		}
+		// Audience is important to be able to use the token outside the cluster. If it does not contain the
+		// KubernetesApiAddr, then it will throw an error
+		// "Unauthorized" "couldn't get current server API group list: the server has asked for the client to provide credentials"
 		tokenRequest := &authenticationv1.TokenRequest{
 			Spec: authenticationv1.TokenRequestSpec{
-				Audiences:         []string{"api", "https://kubernetes.default.svc"},
+				Audiences:         []string{"https://kubernetes.default.svc", p.config.KubernetesApiAddr},
 				ExpirationSeconds: &expirationSeconds,
 				BoundObjectRef:    bountObjectRef,
 			},
