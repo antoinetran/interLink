@@ -475,9 +475,6 @@ func remoteExecutionHandleProjectedSource(
 			Spec: authenticationv1.TokenRequestSpec{
 				Audiences: []string{
 					"https://kubernetes.default.svc.cluster.local",
-					"10.96.0.1",
-					"https://10.96.0.1",
-					"https://10.96.0.1:443",
 					p.config.KubernetesApiAddr,
 					p.config.KubernetesApiAddr + ":" + p.config.KubernetesApiPort,
 					"https://" + p.config.KubernetesApiAddr,
