@@ -443,8 +443,8 @@ func addKubernetesServicesEnvVars(ctx context.Context, config Config, pod *v1.Po
 	}
 	appendEnvVars := func(containersPtr *[]v1.Container, index int) {
 		containers := *containersPtr
-		container := containers[index]
-		envsPtr := &container.Env
+		//container := containers[index]
+		envsPtr := &containers[index].Env
 
 		appendEnvVar(envsPtr, "KUBERNETES_PORT", "tcp://"+config.KubernetesApiAddr+":"+config.KubernetesApiPort)
 		appendEnvVar(envsPtr, "KUBERNETES_SERVICE_PORT", config.KubernetesApiPort)
@@ -463,15 +463,17 @@ func addKubernetesServicesEnvVars(ctx context.Context, config Config, pod *v1.Po
 		appendEnvVars(&pod.Spec.Containers, i)
 	}
 
-	// For debugging purpose only.
-	for _, container := range pod.Spec.InitContainers {
-		for _, envVar := range container.Env {
-			log.G(ctx).Debug("in addKubernetesServicesEnvVars InterLink VK environment variable to pod ", pod.Name, " container: ", container.Name, " env: ", envVar.Name, " value: ", envVar.Value)
+	if log.G(ctx).Logger.IsLevelEnabled(log.DebugLevel) {
+		// For debugging purpose only.
+		for _, container := range pod.Spec.InitContainers {
+			for _, envVar := range container.Env {
+				log.G(ctx).Debug("in addKubernetesServicesEnvVars InterLink VK environment variable to pod ", pod.Name, " container: ", container.Name, " env: ", envVar.Name, " value: ", envVar.Value)
+			}
 		}
-	}
-	for _, container := range pod.Spec.Containers {
-		for _, envVar := range container.Env {
-			log.G(ctx).Debug("in addKubernetesServicesEnvVars InterLink VK environment variable to pod ", pod.Name, " container: ", container.Name, " env: ", envVar.Name, " value: ", envVar.Value)
+		for _, container := range pod.Spec.Containers {
+			for _, envVar := range container.Env {
+				log.G(ctx).Debug("in addKubernetesServicesEnvVars InterLink VK environment variable to pod ", pod.Name, " container: ", container.Name, " env: ", envVar.Name, " value: ", envVar.Value)
+			}
 		}
 	}
 	log.G(ctx).Info("InterLink VK added a set of environment variables (e.g.: KUBERNETES_SERVICE_HOST) to all containers of pod ",
