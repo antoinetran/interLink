@@ -446,7 +446,7 @@ func remoteExecutionHandleProjectedSource(
 		// Bount it to POD, so that token is deleted if pod is deleted.
 		bountObjectRef := &authenticationv1.BoundObjectReference{
 			Kind: "Pod",
-			UID:  pod.UID,
+			//UID:  pod.UID,
 			Name: pod.Name,
 		}
 		// Audience is important to be able to use the token outside the cluster. If it does not contain the
@@ -454,6 +454,8 @@ func remoteExecutionHandleProjectedSource(
 		// "Unauthorized" "couldn't get current server API group list: the server has asked for the client to provide credentials"
 		tokenRequest := &authenticationv1.TokenRequest{
 			Spec: authenticationv1.TokenRequestSpec{
+				// Audience is supposed to be the Kubernetes API URL. However after test with KIND cluster, this is not enforced.
+				// Adding it anyway in case of, for other Kubernetes clusters.
 				Audiences: []string{
 					"https://" + p.config.KubernetesApiAddr + ":" + p.config.KubernetesApiPort,
 				},
@@ -462,23 +464,6 @@ func remoteExecutionHandleProjectedSource(
 			},
 		}
 
-		// Audience is supposed to be the Kubernetes API URL. However after test with KIND cluster, this is not enforced.
-		// Adding it anyway in case of, for other Kubernetes clusters.
-		/*
-		 */
-		/*
-			tokenRequest := &authenticationv1.TokenRequest{
-				Spec: authenticationv1.TokenRequestSpec{
-					Audiences: []string{
-						"https://kubernetes.default.svc.cluster.local",
-						"https://" + p.config.KubernetesApiAddr + ":" + p.config.KubernetesApiPort,
-					},
-					ExpirationSeconds: &expirationSeconds,
-				},
-			}
-
-		*/
-		log.G(ctx).Debug("Requesting token... token audience: https://kubernetes.default.svc and ", p.config.KubernetesApiAddr)
 		tokenRequestResult, err := p.clientSet.CoreV1().ServiceAccounts(pod.Namespace).CreateToken(
 			ctx, pod.Spec.ServiceAccountName, tokenRequest, metav1.CreateOptions{})
 		if err != nil {
