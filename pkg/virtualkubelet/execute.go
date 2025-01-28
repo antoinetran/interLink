@@ -454,11 +454,13 @@ func remoteExecutionHandleProjectedSource(
 		// "Unauthorized" "couldn't get current server API group list: the server has asked for the client to provide credentials"
 		tokenRequest := &authenticationv1.TokenRequest{
 			Spec: authenticationv1.TokenRequestSpec{
-				// Audience is supposed to be the Kubernetes API URL. However after test with KIND cluster, this is not enforced.
-				// Adding it anyway in case of, for other Kubernetes clusters.
-				Audiences: []string{
-					"https://" + p.config.KubernetesApiAddr + ":" + p.config.KubernetesApiPort,
-				},
+				/*
+					// Audience is supposed to be the Kubernetes API URL. However after test with KIND cluster, this is not enforced.
+					// Adding it anyway in case of, for other Kubernetes clusters.
+					Audiences: []string{
+						"https://" + p.config.KubernetesApiAddr + ":" + p.config.KubernetesApiPort,
+					},
+				*/
 				ExpirationSeconds: &expirationSeconds,
 				BoundObjectRef:    bountObjectRef,
 			},
