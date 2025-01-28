@@ -417,10 +417,71 @@ func LogRetrieval(
 	return resp.Body, err
 }
 
+// Adds to pod environment variables related to services. For now, it only concerns Kubernetes API variables, example below:
+/*
+KUBERNETES_PORT=tcp://10.96.0.1:443
+KUBERNETES_SERVICE_PORT=443
+KUBERNETES_PORT_443_TCP_ADDR=10.96.0.1
+KUBERNETES_PORT_443_TCP_PORT=443
+KUBERNETES_PORT_443_TCP_PROTO=tcp
+KUBERNETES_PORT_443_TCP=tcp://10.96.0.1:443
+KUBERNETES_SERVICE_PORT_HTTPS=443
+KUBERNETES_SERVICE_HOST=10.96.0.1
+*/
+func addKubernetesServicesEnvVars(ctx context.Context, config Config, pod *v1.Pod) {
+	if config.KubernetesApiAddr == "" || config.KubernetesApiPort == "" {
+		log.G(ctx).Info("InterLink configuration does not contains both KubernetesApiAddr and KubernetesApiPort, so no env var like KUBERNETES_SERVICE_HOST is added.")
+		return
+	}
+
+	appendEnvVar := func(envs *[]v1.EnvVar, name string, value string) {
+		envVar := v1.EnvVar{
+			Name:  name,
+			Value: value,
+		}
+		*envs = append(*envs, envVar)
+	}
+	appendEnvVars := func(containersPtr *[]v1.Container, index int) {
+		containers := *containersPtr
+		container := containers[index]
+		envsPtr := &container.Env
+
+		appendEnvVar(envsPtr, "KUBERNETES_PORT", "tcp://"+config.KubernetesApiAddr+":"+config.KubernetesApiPort)
+		appendEnvVar(envsPtr, "KUBERNETES_SERVICE_PORT", config.KubernetesApiPort)
+		appendEnvVar(envsPtr, "KUBERNETES_PORT_443_TCP_ADDR", config.KubernetesApiAddr)
+		appendEnvVar(envsPtr, "KUBERNETES_PORT_443_TCP_PORT", config.KubernetesApiPort)
+		appendEnvVar(envsPtr, "KUBERNETES_PORT_443_TCP_PROTO", "tcp")
+		appendEnvVar(envsPtr, "KUBERNETES_PORT_443_TCP", "tcp://"+config.KubernetesApiAddr+":"+config.KubernetesApiPort)
+		appendEnvVar(envsPtr, "KUBERNETES_SERVICE_PORT_HTTPS", config.KubernetesApiPort)
+		appendEnvVar(envsPtr, "KUBERNETES_SERVICE_HOST", config.KubernetesApiAddr)
+	}
+	// Warning: loop range copy value, so to modify original containers, we must use index instead.
+	for i, _ := range pod.Spec.InitContainers {
+		appendEnvVars(&pod.Spec.InitContainers, i)
+	}
+	for i, _ := range pod.Spec.Containers {
+		appendEnvVars(&pod.Spec.Containers, i)
+	}
+
+	// For debugging purpose only.
+	for _, container := range pod.Spec.InitContainers {
+		for _, envVar := range container.Env {
+			log.G(ctx).Debug("in addKubernetesServicesEnvVars InterLink VK environment variable to pod ", pod.Name, " container: ", container.Name, " env: ", envVar.Name, " value: ", envVar.Value)
+		}
+	}
+	for _, container := range pod.Spec.Containers {
+		for _, envVar := range container.Env {
+			log.G(ctx).Debug("in addKubernetesServicesEnvVars InterLink VK environment variable to pod ", pod.Name, " container: ", container.Name, " env: ", envVar.Name, " value: ", envVar.Value)
+		}
+	}
+	log.G(ctx).Info("InterLink VK added a set of environment variables (e.g.: KUBERNETES_SERVICE_HOST) to all containers of pod ",
+		pod.Name, " k8s addr ", config.KubernetesApiAddr, " k8s port ", config.KubernetesApiPort)
+}
+
+// Handle projected sources and fills the projectedVolume object.
 func remoteExecutionHandleProjectedSource(
 	ctx context.Context, p *Provider, pod *v1.Pod, source v1.VolumeProjection, projectedVolume *v1.ConfigMap,
 ) error {
-	//projectedVolume.Name =
 	switch {
 	case source.ServiceAccountToken != nil:
 		/* Case
@@ -447,7 +508,8 @@ func remoteExecutionHandleProjectedSource(
 		// Bount it to POD, so that token is deleted if pod is deleted. This is important given the illimited expiration.
 		bountObjectRef := &authenticationv1.BoundObjectReference{
 			Kind: "Pod",
-			//UID:  pod.UID,
+			// Only one of UID or Name is sufficient, k8s will retrieve the other value.
+			UID:  pod.UID,
 			Name: pod.Name,
 		}
 		tokenRequest := &authenticationv1.TokenRequest{
@@ -483,6 +545,8 @@ func remoteExecutionHandleProjectedSource(
 				log.G(ctx).Debug("handling special case of Kubernetes API kube-root-ca.crt, override found, using provided ca.crt:, ", overrideCaCrt)
 				projectedVolume.Data[item.Path] = overrideCaCrt
 			} else {
+				// This gets the usual certificate for K8s API, but it is restricted to whatever usual IP/FQDN of K8S API URL.
+				// With InterLink, the Kubernetes internal network is not accessible so this default ca.crt is probably useless.
 				log.G(ctx).Warning("using default Kubernetes API kube-root-ca.crt (no override found), but the default one might not be compatible with the subject: ", p.config.KubernetesApiAddr)
 				cfgmap, err := p.clientSet.CoreV1().ConfigMaps(pod.Namespace).Get(ctx, source.ConfigMap.Name, metav1.GetOptions{})
 				if err != nil {
@@ -522,14 +586,14 @@ func remoteExecutionHandleProjectedSource(
 				case "metadata.uid":
 					projectedVolume.Data[item.Path] = string(pod.UID)
 
-				// TODO implement DownwardAPI annotation and label
+				// TODO implement DownwardAPI annotation and label if needed.
 
 				default:
 					log.G(ctx).Warningf("in pod %s unsupported DownwardAPI FieldPath %s in InterLink, ignoring this source...", pod.Name, item.FieldRef.FieldPath)
 				}
 
 			case item.ResourceFieldRef != nil:
-				// TODO implement DownwardAPI resourceFieldRef
+				// TODO implement DownwardAPI resourceFieldRef if needed.
 				log.G(ctx).Warningf("in pod %s unsupported DownwardAPI resourceFieldRef in InterLink, ignoring this source...", pod.Name)
 
 			default:
@@ -539,72 +603,6 @@ func remoteExecutionHandleProjectedSource(
 		}
 	}
 	return nil
-}
-
-// Adds to pod environment variables related to services. For now, it only concerns Kubernetes API variables, example below:
-/*
-KUBERNETES_PORT=tcp://10.96.0.1:443
-KUBERNETES_SERVICE_PORT=443
-KUBERNETES_PORT_443_TCP_ADDR=10.96.0.1
-KUBERNETES_PORT_443_TCP_PORT=443
-KUBERNETES_PORT_443_TCP_PROTO=tcp
-KUBERNETES_PORT_443_TCP=tcp://10.96.0.1:443
-KUBERNETES_SERVICE_PORT_HTTPS=443
-KUBERNETES_SERVICE_HOST=10.96.0.1
-*/
-func addKubernetesServicesEnvVars(ctx context.Context, config Config, pod *v1.Pod) {
-	appendEnvVar := func(envs *[]v1.EnvVar, name string, value string) {
-		envVar := v1.EnvVar{
-			Name:  name,
-			Value: value,
-		}
-		log.G(ctx).Debug("in addKubernetesServicesEnvVars in appendEnvVar before add env: len(envs): ", len(*envs))
-		*envs = append(*envs, envVar)
-		log.G(ctx).Debug("in addKubernetesServicesEnvVars in appendEnvVar after add env: len(envs): ", len(*envs))
-	}
-	appendEnvVars := func(containersPtr *[]v1.Container, index int) {
-		containers := *containersPtr
-		container := containers[index]
-		envsPtr := &containers[index].Env
-
-		log.G(ctx).Debug("in addKubernetesServicesEnvVars in appendEnvVars before add env: len(container.Env): ", len(container.Env))
-		appendEnvVar(envsPtr, "KUBERNETES_PORT", "tcp://"+config.KubernetesApiAddr+":"+config.KubernetesApiPort)
-		appendEnvVar(envsPtr, "KUBERNETES_SERVICE_PORT", config.KubernetesApiPort)
-		appendEnvVar(envsPtr, "KUBERNETES_PORT_443_TCP_ADDR", config.KubernetesApiAddr)
-		appendEnvVar(envsPtr, "KUBERNETES_PORT_443_TCP_PORT", config.KubernetesApiPort)
-		appendEnvVar(envsPtr, "KUBERNETES_PORT_443_TCP_PROTO", "tcp")
-		appendEnvVar(envsPtr, "KUBERNETES_PORT_443_TCP", "tcp://"+config.KubernetesApiAddr+":"+config.KubernetesApiPort)
-		appendEnvVar(envsPtr, "KUBERNETES_SERVICE_PORT_HTTPS", config.KubernetesApiPort)
-		appendEnvVar(envsPtr, "KUBERNETES_SERVICE_HOST", config.KubernetesApiAddr)
-		log.G(ctx).Debug("in addKubernetesServicesEnvVars in appendEnvVars after add env: len(container.Env): ", len(container.Env))
-	}
-	if config.KubernetesApiAddr == "" || config.KubernetesApiPort == "" {
-		log.G(ctx).Info("InterLink configuration does not contains both KubernetesApiAddr and KubernetesApiPort, so no env var like KUBERNETES_SERVICE_HOST is added.")
-		return
-	}
-	// Warning: loop range copy value, so to modify containers, we must use index instead.
-	for i, _ := range pod.Spec.InitContainers {
-		log.G(ctx).Debug("in addKubernetesServicesEnvVars in loop init before add env: len(container.Env): ", len(pod.Spec.InitContainers[i].Env))
-		appendEnvVars(&pod.Spec.InitContainers, i)
-		log.G(ctx).Debug("in addKubernetesServicesEnvVars in loop init after add env: len(container.Env): ", len(pod.Spec.InitContainers[i].Env))
-	}
-	for i, _ := range pod.Spec.Containers {
-		appendEnvVars(&pod.Spec.Containers, i)
-	}
-
-	// For debugging purpose only.
-	for _, container := range pod.Spec.InitContainers {
-		for _, envVar := range container.Env {
-			log.G(ctx).Debug("in addKubernetesServicesEnvVars InterLink VK environment variable to pod ", pod.Name, " container: ", container.Name, " env: ", envVar.Name, " value: ", envVar.Value)
-		}
-	}
-	for _, container := range pod.Spec.Containers {
-		for _, envVar := range container.Env {
-			log.G(ctx).Debug("in addKubernetesServicesEnvVars InterLink VK environment variable to pod ", pod.Name, " container: ", container.Name, " env: ", envVar.Name, " value: ", envVar.Value)
-		}
-	}
-	log.G(ctx).Info("InterLink VK added a set of environment variables (e.g.: KUBERNETES_SERVICE_HOST) to all containers of pod ",
-		pod.Name, " k8s addr ", config.KubernetesApiAddr, " k8s port ", config.KubernetesApiPort)
 }
 
 func remoteExecutionHandleVolumes(ctx context.Context, p *Provider, pod *v1.Pod, req *types.PodCreateRequests) error {

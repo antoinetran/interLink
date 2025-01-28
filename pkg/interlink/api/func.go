@@ -138,11 +138,12 @@ func retrieveData(ctx context.Context, config types.Config, pod types.PodCreateR
 						pod.Pod.Name, container.Name, vol.Name, vol.Secret.SecretName, strings.Join(secretKeys, ","))
 
 				case vol.EmptyDir != nil:
+					// Deprecated: EmptyDirs is useless at VK level. It should be moved to plugin level.
 					edPath := filepath.Join(config.DataRootFolder, pod.Pod.Namespace+"-"+string(pod.Pod.UID), "emptyDirs", vol.Name)
 					retrievedData.EmptyDirs = append(retrievedData.EmptyDirs, edPath)
 
 				default:
-					log.G(ctx).Warning("Unsupported volume type for ", mountVar.Name)
+					log.G(ctx).Warning("ignoring unsupported volume type for ", mountVar.Name)
 				}
 
 			}
