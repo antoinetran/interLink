@@ -443,24 +443,15 @@ func remoteExecutionHandleProjectedSource(
 		// Infinite = 100 years
 		expirationSeconds = 100 * 365 * 24 * 3600
 
-		// Bount it to POD, so that token is deleted if pod is deleted.
+		// Bount it to POD, so that token is deleted if pod is deleted. This is important given the illimited expiration.
 		bountObjectRef := &authenticationv1.BoundObjectReference{
 			Kind: "Pod",
 			//UID:  pod.UID,
 			Name: pod.Name,
 		}
-		// Audience is important to be able to use the token outside the cluster. If it does not contain the
-		// KubernetesApiAddr, then it will throw an error
-		// "Unauthorized" "couldn't get current server API group list: the server has asked for the client to provide credentials"
 		tokenRequest := &authenticationv1.TokenRequest{
 			Spec: authenticationv1.TokenRequestSpec{
-				/*
-					// Audience is supposed to be the Kubernetes API URL. However after test with KIND cluster, this is not enforced.
-					// Adding it anyway in case of, for other Kubernetes clusters.
-					Audiences: []string{
-						"https://" + p.config.KubernetesApiAddr + ":" + p.config.KubernetesApiPort,
-					},
-				*/
+				// No need to set audience field. If set with wrong value, it might break token validity!
 				ExpirationSeconds: &expirationSeconds,
 				BoundObjectRef:    bountObjectRef,
 			},
