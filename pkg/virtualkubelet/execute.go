@@ -675,6 +675,7 @@ func remoteExecutionHandleVolumes(ctx context.Context, p *Provider, pod *v1.Pod,
 				}
 
 				if failedAndWait {
+					log.G(ctx).Warningf("volume %s not ready, sleeping 2s, attempt %f / 5min max", volume.Name, timeNow.Sub(startTime).Minutes())
 					time.Sleep(2 * time.Second)
 					continue
 				}
