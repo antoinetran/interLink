@@ -28,9 +28,9 @@ import (
 const PodPhaseInitialize = "Initializing"
 const PodPhaseCompleted = "Completed"
 
-func failedMount(ctx context.Context, failedAndWait *bool, name string, pod *v1.Pod, p *Provider) error {
+func failedMount(ctx context.Context, failedAndWait *bool, name string, pod *v1.Pod, p *Provider, err error) error {
 	*failedAndWait = true
-	log.G(ctx).Warning("Unable to find ConfigMap " + name + " for pod " + pod.Name + ". Waiting for it to be initialized")
+	log.G(ctx).Warningf("Unable to find ConfigMap %s for pod %s. Waiting for it to be initialized. Error was: %w. Current phase: %s", name, pod.Name, err, pod.Status.Phase)
 	if pod.Status.Phase != PodPhaseInitialize {
 		pod.Status.Phase = PodPhaseInitialize
 		err := p.UpdatePod(ctx, pod)
@@ -630,7 +630,7 @@ func remoteExecutionHandleVolumes(ctx context.Context, p *Provider, pod *v1.Pod,
 				case volume.ConfigMap != nil:
 					cfgmap, err := p.clientSet.CoreV1().ConfigMaps(pod.Namespace).Get(ctx, volume.ConfigMap.Name, metav1.GetOptions{})
 					if err != nil {
-						err = failedMount(ctx, &failedAndWait, volume.ConfigMap.Name, pod, p)
+						err = failedMount(ctx, &failedAndWait, volume.ConfigMap.Name, pod, p, err)
 						if err != nil {
 							return err
 						}
@@ -659,7 +659,7 @@ func remoteExecutionHandleVolumes(ctx context.Context, p *Provider, pod *v1.Pod,
 				case volume.Secret != nil:
 					scrt, err := p.clientSet.CoreV1().Secrets(pod.Namespace).Get(ctx, volume.Secret.SecretName, metav1.GetOptions{})
 					if err != nil {
-						err = failedMount(ctx, &failedAndWait, volume.Secret.SecretName, pod, p)
+						err = failedMount(ctx, &failedAndWait, volume.Secret.SecretName, pod, p, err)
 						if err != nil {
 							return err
 						}
@@ -675,7 +675,7 @@ func remoteExecutionHandleVolumes(ctx context.Context, p *Provider, pod *v1.Pod,
 				}
 
 				if failedAndWait {
-					time.Sleep(time.Second)
+					time.Sleep(2 * time.Second)
 					continue
 				}
 				pod.Status.Phase = v1.PodPending
