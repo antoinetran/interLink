@@ -609,6 +609,7 @@ func remoteExecutionHandleProjectedSource(
 
 func remoteExecutionHandleVolumes(ctx context.Context, p *Provider, pod *v1.Pod, req *types.PodCreateRequests) error {
 	startTime := time.Now()
+	endTime := startTime.Add(5 * time.Minute)
 
 	_, err := p.clientSet.CoreV1().Pods(pod.Namespace).Get(ctx, pod.Name, metav1.GetOptions{})
 	if err != nil {
@@ -624,7 +625,7 @@ func remoteExecutionHandleVolumes(ctx context.Context, p *Provider, pod *v1.Pod,
 		log.G(ctx).Debug("Looking at volume ", volume)
 		for {
 			failedAndWait = false
-			if time.Now().Sub(startTime).Seconds() < time.Hour.Minutes()*5 {
+			if time.Now().Before(endTime) {
 				switch {
 				case volume.ConfigMap != nil:
 					cfgmap, err := p.clientSet.CoreV1().ConfigMaps(pod.Namespace).Get(ctx, volume.ConfigMap.Name, metav1.GetOptions{})
@@ -674,7 +675,7 @@ func remoteExecutionHandleVolumes(ctx context.Context, p *Provider, pod *v1.Pod,
 				}
 
 				if failedAndWait {
-					log.G(ctx).Warningf("volume %s not ready, sleeping 2s, attempt %f / 5min max", volume.Name, time.Now().Sub(startTime).Minutes())
+					log.G(ctx).Warningf("volume %s not ready, sleeping 2s, attempt %f / 5min max", volume.Name, time.Since(startTime).Minutes())
 					time.Sleep(2 * time.Second)
 					continue
 				}
